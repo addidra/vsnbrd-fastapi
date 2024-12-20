@@ -22,7 +22,7 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"message": TELE_FILE_URL}
+    return {"message": "Hello World"}
 
 @app.get('/getImage')
 def getImage(file_path: str = Query(...)):
