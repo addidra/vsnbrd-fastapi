@@ -36,6 +36,7 @@ class TelegramUpdate(BaseModel):
 
 @app.get("/")
 async def hello():
+    print("Render is working")
     return {"status": True}
 
 @app.post("/webhook")
@@ -50,7 +51,7 @@ async def telegram_webhook(update: TelegramUpdate):
                 user_id=str(user.get("id"))
             )
             users_collection.update_one(
-                {"user_id": user.id},
+                {"user_id": str(user.get("id"))},
                 {"$setOnInsert": user_data.model_dump()},
                 upsert=True
             )
