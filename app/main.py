@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query, Response, APIRouter
+from fastapi import FastAPI, Query, Response, APIRouter,HTTPException, Body
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 import requests
@@ -40,7 +40,7 @@ async def hello():
     return {"status": True}
 
 @app.post("/webhook")
-async def telegram_webhook(update: Any):
+async def telegram_webhook(update: dict = Body(...)):
     try:
         if update.message and update.message.text == "/start":
             user = update.message["from"]
@@ -59,7 +59,7 @@ async def telegram_webhook(update: Any):
         print(update)
         return {"status": True}
     except Exception as e:
-        raise e
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get('/getImage')
 def getImage(file_path: str = Query(...)):
