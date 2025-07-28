@@ -7,6 +7,8 @@ from app.actions.telegram import TelegramFilePathFetcher
 import asyncio
 from pydantic import BaseModel
 from app.dependency import users_collection
+from typing import Any
+from app.schemas.users import User
 
 load_dotenv()
 
@@ -37,7 +39,21 @@ async def hello():
     return {"status": True}
 
 @app.post("/webhook")
-async def telegram_webhook(update: TelegramUpdate):
+async def telegram_webhook(update: Any):
+    if update.message and update.message.text == "/start":
+        user = update.message["from"]
+        user_data = User(
+            username=user.get("username", ""),
+            first_name=user.get("first_name", ""),
+            last_name=user.get("last_name", ""),  
+            user_id=str(user.get("id"))
+        )
+        users_collection.update_one(
+            {"user_id": user.id},
+            {"$setOnInsert": user_data.model_dump()},
+            upsert=True
+        )
+        print(f"User {user_data.username} added to the database.")
     print(update)
     return {"status": True}
 
