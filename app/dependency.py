@@ -11,7 +11,7 @@ uri = os.getenv("MONGO_DB")
 try:
     client = MongoClient(uri, server_api=ServerApi('1'))
     # Configure Database
-    db = client.sample_mflix
+    db = client.oivsnbrd
     users_collection = db.users
 except Exception as e:
     print(f"Error connecting to MongoDB: {e}")
