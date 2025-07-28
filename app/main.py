@@ -5,7 +5,7 @@ import requests
 import os
 from app.actions.telegram import TelegramFilePathFetcher
 import asyncio
-# from app.actions.dummy_crud import create_dummy
+from pydantic import BaseModel
 from app.dependency import users_collection
 
 load_dotenv()
@@ -27,10 +27,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class TelegramUpdate(BaseModel):
+    update_id: int
+    message: dict | None = None
+    edited_message: dict | None = None
 
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
+@app.post("/webhook")
+async def telegram_webhook(update: TelegramUpdate):
+    print(update)
+    return {"status": True}
 
 @app.get('/getImage')
 def getImage(file_path: str = Query(...)):
