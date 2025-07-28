@@ -39,23 +39,26 @@ async def hello():
     return {"status": True}
 
 @app.post("/webhook")
-async def telegram_webhook(update: Any):
-    if update.message and update.message.text == "/start":
-        user = update.message["from"]
-        user_data = User(
-            username=user.get("username", ""),
-            first_name=user.get("first_name", ""),
-            last_name=user.get("last_name", ""),  
-            user_id=str(user.get("id"))
-        )
-        users_collection.update_one(
-            {"user_id": user.id},
-            {"$setOnInsert": user_data.model_dump()},
-            upsert=True
-        )
-        print(f"User {user_data.username} added to the database.")
-    print(update)
-    return {"status": True}
+async def telegram_webhook(update: TelegramUpdate):
+    try:
+        if update.message and update.message.text == "/start":
+            user = update.message["from"]
+            user_data = User(
+                username=user.get("username", ""),
+                first_name=user.get("first_name", ""),
+                last_name=user.get("last_name", ""),  
+                user_id=str(user.get("id"))
+            )
+            users_collection.update_one(
+                {"user_id": user.id},
+                {"$setOnInsert": user_data.model_dump()},
+                upsert=True
+            )
+            print(f"User {user_data.username} added to the database.")
+        print(update)
+        return {"status": True}
+    except Exception as e:
+        raise e
 
 @app.get('/getImage')
 def getImage(file_path: str = Query(...)):
