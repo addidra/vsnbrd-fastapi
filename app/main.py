@@ -59,7 +59,7 @@ async def telegram_webhook(update: dict = Body(...)):
         print(update)
         return {"status": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return HTTPException(status_code=500, detail=str(e))
 
 @app.get('/getImage')
 def getImage(file_path: str = Query(...)):
