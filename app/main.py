@@ -32,6 +32,10 @@ class TelegramUpdate(BaseModel):
     message: dict | None = None
     edited_message: dict | None = None
 
+@app.get("/")
+async def hello():
+    return {"status": True}
+
 @app.post("/webhook")
 async def telegram_webhook(update: TelegramUpdate):
     print(update)
