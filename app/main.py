@@ -42,6 +42,8 @@ async def hello():
 @app.post("/webhook")
 async def telegram_webhook(update: dict = Body(...)):
     try:
+        print(update)
+        return {"update":update}
         if update.message and update.message.text == "/start":
             user = update.message["from"]
             user_data = User(
