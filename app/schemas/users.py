@@ -23,7 +23,8 @@ class User(MongoBaseModel):
     username: str
     first_name: str
     last_name: str | None = None
-    profile_image: str | None = None
+    profile_image_id: str | None = None
+    profile_image_path: str | None = None
     posts: List[ObjectId] = []
     created_at: datetime = Field(default_factory=lambda: datetime.now())
     

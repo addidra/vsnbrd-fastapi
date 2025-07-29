@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.dependency import users_collection
 from typing import Any
 from app.schemas.users import User
+from app.actions.telegram_bot import run_tele_api, get_file_path
 
 load_dotenv()
 
@@ -42,15 +43,19 @@ async def hello():
 @app.post("/webhook")
 async def telegram_webhook(update: dict = Body(...)):
     try:
-        print(update)
-        return {"update":update}
-        if update.message and update.message.text == "/start":
-            user = update.message["from"]
+        update = dict(update)
+        if update["message"] and update["message"]["text"] == "/start":
+            user = update["message"]["from"]
+            response = await run_tele_api("getUserProfilePhotos",method="post", params={"user_id": str(user.get("id"))})
+            file_id = response.get("result", {}).get("photos", [])[0][0].get("file_id", "")
+            file_path = await get_file_path(file_id)
             user_data = User(
                 username=user.get("username", ""),
                 first_name=user.get("first_name", ""),
                 last_name=user.get("last_name", ""),  
-                user_id=str(user.get("id"))
+                user_id=str(user.get("id")),
+                profile_image_id=file_id,
+                profile_image_path=file_path
             )
             users_collection.update_one(
                 {"user_id": str(user.get("id"))},
@@ -60,6 +65,18 @@ async def telegram_webhook(update: dict = Body(...)):
             print(f"User {user_data.username} added to the database.")
         print(update)
         return {"status": True}
+    except Exception as e:
+        return HTTPException(status_code=500, detail=str(e))
+
+@app.get('/test')
+async def test():
+    try:
+        response = await run_tele_api("getUserProfilePhotos", method="post", params={"user_id": "1892630283"})
+        response = dict(response)
+        # return response
+        file_id = response.get("result", {}).get("photos", [])[0][0].get("file_id", "")
+        file_path = await get_file_path(file_id)
+        return {"status": True, "data": file_path}
     except Exception as e:
         return HTTPException(status_code=500, detail=str(e))
 
