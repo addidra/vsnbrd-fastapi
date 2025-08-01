@@ -7,10 +7,8 @@ from app.actions.telegram import TelegramFilePathFetcher
 import asyncio
 from pydantic import BaseModel
 from app.dependency import users_collection
-from typing import Any
 from app.schemas.users import User
 from app.actions.telegram_bot import run_tele_api, get_file_path
-import logging
 
 load_dotenv()
 
@@ -20,7 +18,6 @@ BOT_API = os.getenv("BOT_API")
 
 app = FastAPI()
 router = APIRouter()
-logger = logging.getLogger("uvicorn")
 # app.include_router(router)
 
 app.add_middleware(
