@@ -10,6 +10,7 @@ from app.dependency import users_collection
 from typing import Any
 from app.schemas.users import User
 from app.actions.telegram_bot import run_tele_api, get_file_path
+import logging
 
 load_dotenv()
 
@@ -19,7 +20,7 @@ BOT_API = os.getenv("BOT_API")
 
 app = FastAPI()
 router = APIRouter()
-
+logger = logging.getLogger("uvicorn")
 # app.include_router(router)
 
 app.add_middleware(
@@ -46,6 +47,9 @@ async def telegram_webhook(update: dict = Body(...)):
         update = dict(update)
         if update["message"] and update["message"]["text"] == "/start":
             user = update["message"]["from"]
+            existing_user = users_collection.find_one({"user_id": str(user.get("id"))})
+            if existing_user:
+                return {"status": True, "message": "User already exists in the database."}
             response = await run_tele_api("getUserProfilePhotos",method="post", params={"user_id": str(user.get("id"))})
             file_id = response.get("result", {}).get("photos", [])[0][0].get("file_id", "")
             file_path = await get_file_path(file_id)
@@ -63,7 +67,7 @@ async def telegram_webhook(update: dict = Body(...)):
                 upsert=True
             )
             print(f"User {user_data.username} added to the database.")
-        print(update)
+        print(update, flush=True)
         return {"status": True}
     except Exception as e:
         return HTTPException(status_code=500, detail=str(e))
