@@ -41,7 +41,7 @@ async def hello():
 @app.post("/webhook")
 async def telegram_webhook(update: dict = Body(...)):
     try:
-        update = dict(update)
+        print(update, flush=True)
         if update["message"] and update["message"]["text"] == "/start":
             user = update["message"]["from"]
             existing_user = users_collection.find_one({"user_id": str(user.get("id"))})
@@ -64,7 +64,6 @@ async def telegram_webhook(update: dict = Body(...)):
                 upsert=True
             )
             print(f"User {user_data.username} added to the database.")
-        print(update, flush=True)
         return {"status": True}
     except Exception as e:
         return HTTPException(status_code=500, detail=str(e))
