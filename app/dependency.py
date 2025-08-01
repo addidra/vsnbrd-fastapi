@@ -13,6 +13,9 @@ try:
     # Configure Database
     db = client.oivsnbrd
     users_collection = db.users
+    posts_collection = db.posts
+    tags_collection = db.tags
+    print("MongoDB connection successful")
 except Exception as e:
     print(f"Error connecting to MongoDB: {e}")
     raise e

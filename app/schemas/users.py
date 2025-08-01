@@ -20,8 +20,9 @@ class MongoBaseModel(BaseModel):
 
 class User(MongoBaseModel):
     user_id: str
-    username: str
     first_name: str
+    chat_id: str
+    username: str = ""
     last_name: str | None = None
     profile_image_id: str | None = None
     profile_image_path: str | None = None

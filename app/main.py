@@ -6,8 +6,9 @@ import os
 from app.actions.telegram import TelegramFilePathFetcher
 import asyncio
 from pydantic import BaseModel
-from app.dependency import users_collection
+from app.dependency import users_collection, posts_collection, tags_collection
 from app.schemas.users import User
+from app.schemas.posts import Post,FILE_TYPE, ResolutionDetails, FileDetails
 from app.actions.telegram_bot import run_tele_api, get_file_path
 
 load_dotenv()
@@ -42,8 +43,8 @@ async def hello():
 async def telegram_webhook(update: dict = Body(...)):
     try:
         print(update, flush=True)
-        if update["message"] and update["message"]["text"] == "/start":
-            user = update["message"]["from"]
+        user = update["message"]["from"]
+        if update["message"] and update["message"].get("text", "") == "/start":
             existing_user = users_collection.find_one({"user_id": str(user.get("id"))})
             if existing_user:
                 return {"status": True, "message": "User already exists in the database."}
@@ -55,6 +56,7 @@ async def telegram_webhook(update: dict = Body(...)):
                 first_name=user.get("first_name", ""),
                 last_name=user.get("last_name", ""),  
                 user_id=str(user.get("id")),
+                chat_id = update["message"]["chat"]["id"],
                 profile_image_id=file_id,
                 profile_image_path=file_path
             )
@@ -63,8 +65,37 @@ async def telegram_webhook(update: dict = Body(...)):
                 {"$setOnInsert": user_data.model_dump()},
                 upsert=True
             )
-            print(f"User {user_data.username} added to the database.")
-        return {"status": True}
+            print(f"User {user_data.username} added to the database.", flush=True)
+        if update["message"]["photo"]:
+            # Handle photo message
+            photo = update["message"]["photo"]
+            file_id_high = photo[-1].get("file_id", "")
+            file_id_medium = photo[-2].get("file_id", "")
+            file_id_low = photo[-3].get("file_id", "")
+            file_path_high = await get_file_path(file_id_high)
+            file_path_medium = await get_file_path(file_id_medium)
+            file_path_low = await get_file_path(file_id_low)
+            post_data = Post(
+                user_id=str(user.get("id")),
+                caption=update["message"].get("caption", ""),
+                file_details=ResolutionDetails(
+                    high=FileDetails(file_id=file_id_high, file_path=file_path_high),
+                    medium=FileDetails(file_id=file_id_medium, file_path=file_path_medium),
+                    low=FileDetails(file_id=file_id_low, file_path=file_path_low),
+                ),
+                file_type=FILE_TYPE.IMAGE,
+                message_id=str(update["message"].get("message_id")),
+            )
+            # Save post data to the database
+            post_id = posts_collection.insert_one(post_data.model_dump()).inserted_id
+            
+            # Update user posts
+            users_collection.update_one(
+                {"user_id": str(user.get("id"))},
+                {"$addToSet": {"posts": post_id}}
+            )
+            return {"status": "Post saved successfully", "post_id": str(post_id)}
+        return {"status": "End of webhook processing"}
     except Exception as e:
         return HTTPException(status_code=500, detail=str(e))
 

@@ -1,40 +1,61 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import List, Any
-from datetime import datetime
+from pydantic import BaseModel, Field
+from typing import Dict, List
 from bson import ObjectId
+from datetime import datetime
 from enum import Enum
 
+
+# Enums
 class FILE_TYPE(str, Enum):
     IMAGE = "image"
     VIDEO = "video"
-    DOCUMENT = "document"
-    TEXT = "text"
-    
+    AUDIO = "audio"
+
+
+# ObjectId compatible type
+class PyObjectId(ObjectId):
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v):
+        if isinstance(v, ObjectId):
+            return v
+        return ObjectId(str(v))
+
+
+# BaseModel for MongoDB
 class MongoBaseModel(BaseModel):
-    model_config = {
-        "arbitrary_types_allowed": True
-    }
+    class Config:
+        json_encoders = {ObjectId: str}
+        arbitrary_types_allowed = True
 
-    @staticmethod
-    def validate_object_id(value: Any) -> ObjectId:
-        if isinstance(value, ObjectId):
-            return value
-        try:
-            return ObjectId(str(value))
-        except Exception:
-            raise ValueError(f"Invalid ObjectId: {value}")
 
-class Post(MongoBaseModel):
-    user_id: ObjectId
-    caption: str
-    file_path: str
+# FileDetails model
+class FileDetails(MongoBaseModel):
     file_id: str
+    file_path: str
+
+
+# Wrapper for resolution-based file details
+class ResolutionDetails(MongoBaseModel):
+    high: FileDetails
+    medium: FileDetails
+    low: FileDetails
+
+
+# Post model
+class Post(MongoBaseModel):
+    user_id: str
+    caption: str
+    file_details: ResolutionDetails
     file_type: FILE_TYPE
-    chat_id: str
     message_id: str
     created_at: datetime = Field(default_factory=datetime.now)
-    tag_ids: List[ObjectId] = []
+    tag_ids: List[PyObjectId] = []
+
 
 class Tags(MongoBaseModel):
     name: str
-    user_id: List[ObjectId] = []
+    user_id: List[PyObjectId] = []
