@@ -43,6 +43,8 @@ async def hello():
 async def telegram_webhook(update: dict = Body(...)):
     try:
         print(update, flush=True)
+        if "message" not in update or "from" not in update["message"]:
+            raise HTTPException(status_code=400, detail="Invalid update payload")
         user = update["message"]["from"]
         if update["message"] and update["message"].get("text", "") == "/start":
             existing_user = users_collection.find_one({"user_id": str(user.get("id"))})
@@ -69,9 +71,9 @@ async def telegram_webhook(update: dict = Body(...)):
         if update["message"]["photo"]:
             # Handle photo message
             photo = update["message"]["photo"]
-            file_id_high = photo[-1].get("file_id", "")
-            file_id_medium = photo[-2].get("file_id", "")
-            file_id_low = photo[-3].get("file_id", "")
+            file_id_high = photo[3].get("file_id", "")
+            file_id_medium = photo[2].get("file_id", "")
+            file_id_low = photo[1].get("file_id", "")
             file_path_high = await get_file_path(file_id_high)
             file_path_medium = await get_file_path(file_id_medium)
             file_path_low = await get_file_path(file_id_low)
@@ -87,17 +89,19 @@ async def telegram_webhook(update: dict = Body(...)):
                 message_id=str(update["message"].get("message_id")),
             )
             # Save post data to the database
-            post_id = posts_collection.insert_one(post_data.model_dump()).inserted_id
-            
+            result = await posts_collection.insert_one(post_data.model_dump())
+            post_id = result.inserted_id
+                
             # Update user posts
-            users_collection.update_one(
+            await users_collection.update_one(
                 {"user_id": str(user.get("id"))},
                 {"$addToSet": {"posts": post_id}}
             )
+            print(f"Post saved with ID: {post_id}", flush=True)
             return {"status": "Post saved successfully", "post_id": str(post_id)}
         return {"status": "End of webhook processing"}
     except Exception as e:
-        return HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get('/test')
 async def test():
