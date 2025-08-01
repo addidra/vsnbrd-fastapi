@@ -109,7 +109,7 @@ async def process_update(update: dict):
                     profile_image_id=file_id,
                     profile_image_path=file_path
                 )
-                users_collection.update_one(
+                await users_collection.update_one(
                     {"user_id": user_id},
                     {"$setOnInsert": user_data.model_dump()},
                     upsert=True
@@ -120,7 +120,7 @@ async def process_update(update: dict):
             message_id = str(message.get("message_id"))
 
             # Deduplication check
-            existing_post = posts_collection.find_one({
+            existing_post = await posts_collection.find_one({
                 "user_id": user_id,
                 "message_id": message_id
             })
@@ -149,8 +149,8 @@ async def process_update(update: dict):
                 message_id=message_id,
             )
 
-            post_id = posts_collection.insert_one(post_data.model_dump()).inserted_id
-            users_collection.update_one(
+            post_id = (await posts_collection.insert_one(post_data.model_dump())).inserted_id
+            await users_collection.update_one(
                 {"user_id": user_id},
                 {"$addToSet": {"posts": post_id}}
             )

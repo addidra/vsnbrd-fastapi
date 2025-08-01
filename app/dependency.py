@@ -1,4 +1,5 @@
 from pymongo.mongo_client import MongoClient
+from pymongo import AsyncMongoClient
 from pymongo.server_api import ServerApi
 import os
 from dotenv import load_dotenv
@@ -9,7 +10,8 @@ uri = os.getenv("MONGO_DB")
 
 # Create a new client and connect to the server
 try:
-    client = MongoClient(uri, server_api=ServerApi('1'))
+    client = AsyncMongoClient(uri)
+    # client = MongoClient(uri, server_api=ServerApi('1'))
     # Configure Database
     db = client.oivsnbrd
     users_collection = db.users
