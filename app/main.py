@@ -41,67 +41,8 @@ async def hello():
 
 @app.post("/webhook")
 async def telegram_webhook(update: dict = Body(...)):
-    try:
-        print(update, flush=True)
-        if "message" not in update or "from" not in update["message"]:
-            raise HTTPException(status_code=400, detail="Invalid update payload")
-        user = update["message"]["from"]
-        if update["message"] and update["message"].get("text", "") == "/start":
-            existing_user = users_collection.find_one({"user_id": str(user.get("id"))})
-            if existing_user:
-                return {"status": True, "message": "User already exists in the database."}
-            response = await run_tele_api("getUserProfilePhotos",method="post", params={"user_id": str(user.get("id"))})
-            file_id = response.get("result", {}).get("photos", [])[0][0].get("file_id", "")
-            file_path = await get_file_path(file_id)
-            user_data = User(
-                username=user.get("username", ""),
-                first_name=user.get("first_name", ""),
-                last_name=user.get("last_name", ""),  
-                user_id=str(user.get("id")),
-                chat_id = update["message"]["chat"]["id"],
-                profile_image_id=file_id,
-                profile_image_path=file_path
-            )
-            users_collection.update_one(
-                {"user_id": str(user.get("id"))},
-                {"$setOnInsert": user_data.model_dump()},
-                upsert=True
-            )
-            print(f"User {user_data.username} added to the database.", flush=True)
-        if update["message"]["photo"]:
-            # Handle photo message
-            photo = update["message"]["photo"]
-            file_id_high = photo[3].get("file_id", "")
-            file_id_medium = photo[2].get("file_id", "")
-            file_id_low = photo[1].get("file_id", "")
-            file_path_high = await get_file_path(file_id_high)
-            file_path_medium = await get_file_path(file_id_medium)
-            file_path_low = await get_file_path(file_id_low)
-            post_data = Post(
-                user_id=str(user.get("id")),
-                caption=update["message"].get("caption", ""),
-                file_details=ResolutionDetails(
-                    high=FileDetails(file_id=file_id_high, file_path=file_path_high),
-                    medium=FileDetails(file_id=file_id_medium, file_path=file_path_medium),
-                    low=FileDetails(file_id=file_id_low, file_path=file_path_low),
-                ),
-                file_type=FILE_TYPE.IMAGE,
-                message_id=str(update["message"].get("message_id")),
-            )
-            # Save post data to the database
-            result = await posts_collection.insert_one(post_data.model_dump())
-            post_id = result.inserted_id
-                
-            # Update user posts
-            await users_collection.update_one(
-                {"user_id": str(user.get("id"))},
-                {"$addToSet": {"posts": post_id}}
-            )
-            print(f"Post saved with ID: {post_id}", flush=True)
-            return {"status": "Post saved successfully", "post_id": str(post_id)}
-        return {"status": "End of webhook processing"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    asyncio.create_task(process_update(update))
+    return {"ok": True}
 
 @app.get('/test')
 async def test():
@@ -140,3 +81,80 @@ def get_user_from_db():
         return [serialize_doc(doc) for doc in data]
     except Exception as e:
         return {"error": str(e)}
+
+
+async def process_update(update: dict):
+    try:
+        message = update.get("message")
+        if not message:
+            return
+
+        user = message.get("from", {})
+        user_id = str(user.get("id"))
+        chat_id = message.get("chat", {}).get("id")
+
+        if message.get("text") == "/start":
+            existing_user = await users_collection.find_one({"user_id": user_id})
+            if not existing_user:
+                response = await run_tele_api("getUserProfilePhotos", method="post", params={"user_id": user_id})
+                file_id = response.get("result", {}).get("photos", [])[0][0].get("file_id", "")
+                file_path = await get_file_path(file_id)
+
+                user_data = User(
+                    username=user.get("username", ""),
+                    first_name=user.get("first_name", ""),
+                    last_name=user.get("last_name", ""),
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    profile_image_id=file_id,
+                    profile_image_path=file_path
+                )
+                users_collection.update_one(
+                    {"user_id": user_id},
+                    {"$setOnInsert": user_data.model_dump()},
+                    upsert=True
+                )
+                print(f"New user added: {user_data.username}")
+
+        if message.get("photo"):
+            message_id = str(message.get("message_id"))
+
+            # Deduplication check
+            existing_post = posts_collection.find_one({
+                "user_id": user_id,
+                "message_id": message_id
+            })
+            if existing_post:
+                print("Duplicate post detected. Skipping.")
+                return
+
+            photo = message["photo"]
+            file_id_high = photo[-1]["file_id"]
+            file_id_medium = photo[-2]["file_id"]
+            file_id_low = photo[-3]["file_id"]
+
+            file_path_high = await get_file_path(file_id_high)
+            file_path_medium = await get_file_path(file_id_medium)
+            file_path_low = await get_file_path(file_id_low)
+
+            post_data = Post(
+                user_id=user_id,
+                caption=message.get("caption", ""),
+                file_details=ResolutionDetails(
+                    high=FileDetails(file_id=file_id_high, file_path=file_path_high),
+                    medium=FileDetails(file_id=file_id_medium, file_path=file_path_medium),
+                    low=FileDetails(file_id=file_id_low, file_path=file_path_low),
+                ),
+                file_type=FILE_TYPE.IMAGE,
+                message_id=message_id,
+            )
+
+            post_id = posts_collection.insert_one(post_data.model_dump()).inserted_id
+            users_collection.update_one(
+                {"user_id": user_id},
+                {"$addToSet": {"posts": post_id}}
+            )
+            print(f"Post saved: {post_id}")
+
+    except Exception as e:
+        print(f"Webhook processing failed: {e}", flush=True)
