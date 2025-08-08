@@ -35,3 +35,30 @@ async def get_file_path(file_id):
     if not file_path:
         raise Exception("File path not found")
     return file_path
+
+def serialize_doc(doc):
+    doc['_id'] = str(doc['_id'])
+    return doc
+
+async def send_error_msg(text: str, chat_id: str):
+    """Send formatted error message to the chat by telebot.
+
+    Args:
+        text (str): Error message you want to send.
+        chat_id (str): chat_id of the user.
+    """
+    error_template = (
+        "❌ <b><u>Error</u></b>\n"
+        f"<pre>{text}</pre>"
+    )
+
+    response = await run_tele_api(
+        endpoint="sendMessage",
+        params={
+            "chat_id": chat_id,
+            "text": error_template,
+            "parse_mode": "HTML"
+        },
+        method='post'
+    )
+    return response

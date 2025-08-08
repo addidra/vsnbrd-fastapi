@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app.dependency import users_collection, posts_collection, tags_collection
 from app.schemas.users import User
 from app.schemas.posts import Post,FILE_TYPE, ResolutionDetails, FileDetails
-from app.actions.telegram_bot import run_tele_api, get_file_path
+from app.actions.telegram_bot import run_tele_api, get_file_path, serialize_doc, send_error_msg
 
 load_dotenv()
 
@@ -29,11 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class TelegramUpdate(BaseModel):
-    update_id: int
-    message: dict | None = None
-    edited_message: dict | None = None
-
 @app.get("/")
 async def hello():
     print("Render is working")
@@ -47,12 +42,11 @@ async def telegram_webhook(update: dict = Body(...)):
 @app.get('/test')
 async def test():
     try:
-        response = await run_tele_api("getUserProfilePhotos", method="post", params={"user_id": "1892630283"})
-        response = dict(response)
-        # return response
-        file_id = response.get("result", {}).get("photos", [])[0][0].get("file_id", "")
-        file_path = await get_file_path(file_id)
-        return {"status": True, "data": file_path}
+        res = await send_error_msg(
+            text="This is a test error message, You cannot share your private information as this is publically accessed",
+            chat_id="1892630283"  # Replace with a valid chat ID for testing
+        )
+        return res
     except Exception as e:
         return HTTPException(status_code=500, detail=str(e))
 
@@ -64,6 +58,23 @@ def getImage(file_path: str = Query(...)):
         return Response(content=response.content, media_type='image/png')
     except Exception as e:
         return e
+    
+@app.get("/getUserPosts")
+async def get_user_posts(user_id: str = Query(...)):
+    try:
+        # method 1: Fetch posts directly
+        user_posts = await posts_collection.find({"user_id": user_id}).to_list(length=None)
+        
+        # method 2: Fetch user and then posts
+        # user = await users_collection.find_one({"user_id": user_id})
+        # user_posts2 = await posts_collection.find({"_id": {"$in": user.get("posts", [])}}).to_list(length=None)
+        if not user_posts:
+            return {"ok":False, "message": "No posts found for this user."}
+        
+        return [serialize_doc(post) for post in user_posts]
+    
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
     
 @app.get('/getFilePaths')
 def getFilePaths(user_id: str = Query(...)):
@@ -92,7 +103,7 @@ async def process_update(update: dict):
         user = message.get("from", {})
         user_id = str(user.get("id"))
         chat_id = message.get("chat", {}).get("id")
-
+        raise Exception("This is a test error message, You cannot share your private information as this is publically accessed")
         if message.get("text") == "/start":
             existing_user = await users_collection.find_one({"user_id": user_id})
             if not existing_user:
@@ -157,4 +168,5 @@ async def process_update(update: dict):
             print(f"Post saved: {post_id}")
 
     except Exception as e:
+        await send_error_msg(text=str(e), chat_id=chat_id)
         print(f"Webhook processing failed: {e}", flush=True)
