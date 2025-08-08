@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app.dependency import users_collection, posts_collection, tags_collection
 from app.schemas.users import User
 from app.schemas.posts import Post,FILE_TYPE, ResolutionDetails, FileDetails
-from app.actions.telegram_bot import run_tele_api, get_file_path, serialize_doc, send_error_msg
+from app.actions.telegram_bot import run_tele_api, get_file_path, serialize_doc, send_error_msg, handle_new_user, is_duplicate_post, extract_photo_details, save_post
 
 load_dotenv()
 
@@ -92,9 +92,11 @@ def get_user_from_db():
         return [serialize_doc(doc) for doc in data]
     except Exception as e:
         return {"error": str(e)}
+    
 
 
 async def process_update(update: dict):
+    """Main webhook update processor."""
     try:
         message = update.get("message")
         if not message:
@@ -102,70 +104,22 @@ async def process_update(update: dict):
 
         user = message.get("from", {})
         user_id = str(user.get("id"))
-        chat_id = message.get("chat", {}).get("id")
-        raise Exception("This is a test error message, You cannot share your private information as this is publically accessed")
+        chat_id = str(message.get("chat", {}).get("id"))
+
+        # Handle /start command
         if message.get("text") == "/start":
-            existing_user = await users_collection.find_one({"user_id": user_id})
-            if not existing_user:
-                response = await run_tele_api("getUserProfilePhotos", method="post", params={"user_id": user_id})
-                file_id = response.get("result", {}).get("photos", [])[0][0].get("file_id", "")
-                file_path = await get_file_path(file_id)
+            await handle_new_user(user, chat_id)
 
-                user_data = User(
-                    username=user.get("username", ""),
-                    first_name=user.get("first_name", ""),
-                    last_name=user.get("last_name", ""),
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    profile_image_id=file_id,
-                    profile_image_path=file_path
-                )
-                await users_collection.update_one(
-                    {"user_id": user_id},
-                    {"$setOnInsert": user_data.model_dump()},
-                    upsert=True
-                )
-                print(f"New user added: {user_data.username}")
-
-        if message.get("photo"):
+        # Handle photo messages
+        elif message.get("photo"):
             message_id = str(message.get("message_id"))
 
-            # Deduplication check
-            existing_post = await posts_collection.find_one({
-                "user_id": user_id,
-                "message_id": message_id
-            })
-            if existing_post:
+            if await is_duplicate_post(user_id, message_id):
                 print("Duplicate post detected. Skipping.")
                 return
 
-            photo = message["photo"]
-            file_id_high = photo[-1]["file_id"]
-            file_id_medium = photo[-2]["file_id"]
-            file_id_low = photo[-3]["file_id"]
-
-            file_path_high = await get_file_path(file_id_high)
-            file_path_medium = await get_file_path(file_id_medium)
-            file_path_low = await get_file_path(file_id_low)
-
-            post_data = Post(
-                user_id=user_id,
-                caption=message.get("caption", ""),
-                file_details=ResolutionDetails(
-                    high=FileDetails(file_id=file_id_high, file_path=file_path_high),
-                    medium=FileDetails(file_id=file_id_medium, file_path=file_path_medium),
-                    low=FileDetails(file_id=file_id_low, file_path=file_path_low),
-                ),
-                file_type=FILE_TYPE.IMAGE,
-                message_id=message_id,
-            )
-
-            post_id = (await posts_collection.insert_one(post_data.model_dump())).inserted_id
-            await users_collection.update_one(
-                {"user_id": user_id},
-                {"$addToSet": {"posts": post_id}}
-            )
-            print(f"Post saved: {post_id}")
+            file_details = await extract_photo_details(message["photo"])
+            await save_post(user_id, message_id, message.get("caption", ""), file_details)
 
     except Exception as e:
         await send_error_msg(text=str(e), chat_id=chat_id)
