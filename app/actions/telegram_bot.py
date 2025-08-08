@@ -146,3 +146,6 @@ async def save_post(user_id: str, message_id: str, caption: str, file_details: R
     )
     print(f"Post saved: {post_id}")
     return post_id
+
+async def generate_tags(content:bytes, user_id: str):
+    pass

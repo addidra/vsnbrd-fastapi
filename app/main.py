@@ -5,11 +5,10 @@ import requests
 import os
 from app.actions.telegram import TelegramFilePathFetcher
 import asyncio
-from pydantic import BaseModel
 from app.dependency import users_collection, posts_collection, tags_collection
 from app.schemas.users import User
 from app.schemas.posts import Post,FILE_TYPE, ResolutionDetails, FileDetails
-from app.actions.telegram_bot import run_tele_api, get_file_path, serialize_doc, send_error_msg, handle_new_user, is_duplicate_post, extract_photo_details, save_post
+from app.actions.telegram_bot import serialize_doc, send_error_msg, handle_new_user, is_duplicate_post, extract_photo_details, save_post
 
 load_dotenv()
 
@@ -19,6 +18,7 @@ BOT_API = os.getenv("BOT_API")
 
 app = FastAPI()
 router = APIRouter()
+
 # app.include_router(router)
 
 app.add_middleware(
@@ -93,12 +93,14 @@ def get_user_from_db():
     except Exception as e:
         return {"error": str(e)}
     
-
+import logging
 
 async def process_update(update: dict):
     """Main webhook update processor."""
     try:
         message = update.get("message")
+        logging.info(f"Processing message: {update}")
+        print(f"Processing message: {update}", flush=True)
         if not message:
             return
 
