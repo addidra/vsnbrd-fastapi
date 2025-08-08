@@ -7,7 +7,7 @@ load_dotenv()
 from google import genai
 
 # The client gets the API key from the environment variable `GEMINI_API_KEY`.
-client = genai.Client()
+# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # MongoDB connection string
 uri = os.getenv("MONGO_DB")
