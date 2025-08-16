@@ -41,8 +41,8 @@ class FileDetails(MongoBaseModel):
 # Wrapper for resolution-based file details
 class ResolutionDetails(MongoBaseModel):
     high: FileDetails
-    medium: FileDetails
-    low: FileDetails
+    medium: Optional[FileDetails] = None
+    low: Optional[FileDetails] = None
 
 
 # Post model
