@@ -127,7 +127,7 @@ async def process_update(update: dict):
             response = requests.get(os.getenv("TELE_FILE_URL") + (file_details.low or file_details.medium or file_details.high).file_path)
             base64_bytes = base64.b64encode(response.content).decode("utf-8")
             mime_type, _ = mimetypes.guess_type(file_details.high.file_path)
-            await send_msg(text=f"Guess: {mime_type} {base64_bytes[:30]}...", chat_id=chat_id, error=False)
+            await send_msg(text=f"Guess: {mime_type}", chat_id=chat_id, error=False)
             if not mime_type:
                 mime_type = fetch_mime_type(str(base64_bytes))
                 await send_msg(text=f"Read: {mime_type}", chat_id=chat_id, error=False)

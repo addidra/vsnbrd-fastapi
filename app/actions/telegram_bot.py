@@ -234,12 +234,16 @@ async def save_tags_and_update_post(tags_list: list[str], user_id: ObjectId, pos
     # Prepare bulk upsert operations for tags
     operations = [
         UpdateOne(
-            {"name": tag},
-            {"$addToSet": {"user_id": user_id}},
+            {"name": tag},  # match tag by name
+            {
+                "$setOnInsert": {"name": tag},  # only set name if inserting
+                "$addToSet": {"user_id": user_id},  # ensures no duplicate user_id
+            },
             upsert=True
         )
         for tag in tags_list
     ]
+
 
     if not operations:
         return
