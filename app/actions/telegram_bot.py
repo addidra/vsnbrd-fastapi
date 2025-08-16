@@ -1,12 +1,17 @@
+import base64
 from telegram import Bot
 from dotenv import load_dotenv
 import os
-import requests
+import magic
 import asyncio
 import aiohttp
-from app.dependency import users_collection, posts_collection
+from app.dependency import users_collection, posts_collection,tags_collection, client
 from app.schemas.users import User
 from app.schemas.posts import Post, FILE_TYPE, ResolutionDetails, FileDetails
+from bson import ObjectId
+from pymongo import UpdateOne
+import json
+from google.genai import types
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_API")
@@ -43,23 +48,29 @@ def serialize_doc(doc):
     doc['_id'] = str(doc['_id'])
     return doc
 
-async def send_error_msg(text: str, chat_id: str):
+async def send_msg(text: str, chat_id: str, error: bool = True):
     """Send formatted error message to the chat by telebot.
 
     Args:
         text (str): Error message you want to send.
         chat_id (str): chat_id of the user.
     """
-    error_template = (
-        "❌ <b><u>Error</u></b>\n"
-        f"<pre>{text}</pre>"
-    )
+    if error:
+        template = (
+            "❌ <b><u>Error</u></b>\n"
+            f"<pre>{text}</pre>"
+        )
+    else:
+        template = (
+            "✅ <b><u>Success</u></b>\n"
+            f"<pre>{text}</pre>"
+        )
 
     response = await run_tele_api(
         endpoint="sendMessage",
         params={
             "chat_id": chat_id,
-            "text": error_template,
+            "text": template,
             "parse_mode": "HTML"
         },
         method='post'
@@ -71,17 +82,23 @@ async def handle_new_user(user: dict, chat_id: str):
     user_id = str(user.get("id"))
     existing_user = await users_collection.find_one({"user_id": user_id})
     if existing_user:
-        return None  # Already exists
+        await send_msg(text="User already exists", chat_id=chat_id, error=False)
 
-    # Fetch profile photo details
     response = await run_tele_api(
         "getUserProfilePhotos",
         method="post",
-        params={"user_id": user_id}
+        params={"user_id": user_id, "limit": 1}  # just get the first photo
     )
 
-    file_id = response.get("result", {}).get("photos", [])[0][0].get("file_id", "")
-    file_path = await get_file_path(file_id)
+    photos = response.get("result", {}).get("photos", [])
+
+    if photos and photos[0]:  
+        # last element is the highest resolution
+        file_id = photos[0][-1]["file_id"]
+        file_path = await get_file_path(file_id)
+    else:
+        file_id = None
+        file_path = None
 
     user_data = User(
         username=user.get("username", ""),
@@ -100,6 +117,7 @@ async def handle_new_user(user: dict, chat_id: str):
     )
 
     print(f"New user added: {user_data.username}")
+    await send_msg(text=f"New User {user_data.username} added", chat_id=chat_id, error=False)
     return user_data
 
 
@@ -113,23 +131,25 @@ async def is_duplicate_post(user_id: str, message_id: str) -> bool:
 
 
 async def extract_photo_details(photo_list: list) -> ResolutionDetails:
-    """Extract high, medium, low resolution file details."""
-    file_id_high = photo_list[-1]["file_id"]
-    file_id_medium = photo_list[-2]["file_id"]
-    file_id_low = photo_list[-3]["file_id"]
+    """Extract resolution file details dynamically (1=high, 2=high+medium, 3+=high+medium+low)."""
+    file_details = []
 
-    file_path_high = await get_file_path(file_id_high)
-    file_path_medium = await get_file_path(file_id_medium)
-    file_path_low = await get_file_path(file_id_low)
+    # Traverse and fetch file paths
+    for p in photo_list:
+        file_id = p["file_id"]
+        file_path = await get_file_path(file_id)
+        file_details.append(FileDetails(file_id=file_id, file_path=file_path))
 
-    return ResolutionDetails(
-        high=FileDetails(file_id=file_id_high, file_path=file_path_high),
-        medium=FileDetails(file_id=file_id_medium, file_path=file_path_medium),
-        low=FileDetails(file_id=file_id_low, file_path=file_path_low),
-    )
+    # Assign based on available count
+    if len(file_details) == 1:
+        return ResolutionDetails(high=file_details[-1], medium=None, low=None)
+    elif len(file_details) == 2:
+        return ResolutionDetails(high=file_details[-1], medium=file_details[-2], low=None)
+    else:
+        return ResolutionDetails(high=file_details[-1], medium=file_details[-2], low=file_details[-3])
 
 
-async def save_post(user_id: str, message_id: str, caption: str, file_details: ResolutionDetails):
+async def save_post(user_id: str, message_id: str, caption: str, file_details: ResolutionDetails, chat_id: str):
     """Insert a new post and link it to the user."""
     post_data = Post(
         user_id=user_id,
@@ -145,7 +165,98 @@ async def save_post(user_id: str, message_id: str, caption: str, file_details: R
         {"$addToSet": {"posts": post_id}}
     )
     print(f"Post saved: {post_id}")
+    await send_msg(text=f"New Post {post_id} added", chat_id=chat_id, error=False)
     return post_id
 
-async def generate_tags(content:bytes, user_id: str):
-    pass
+async def generate_tags(mime_type: str, data: bytes, user_id: str):
+    """
+    Generate tags for the provided media content.
+    
+    Args:
+        mime_type (str): The MIME type of the media content.
+        data (bytes): The media content data.
+        user_id (str): The ID of the user submitting the content.
+
+    """
+    
+    tags = await tags_collection.find(
+        {"user_id": user_id},
+        {"name": 1, "_id": 0}
+    ).to_list(length=None)
+    
+
+    tag_names = [tag["name"] for tag in tags]
+    text = """
+        Analyze the provided image or video and return only a JSON array containing up to 7 unique, high-relevance tags that best describe it for casual user search. 
+        Tags must be unrelated to each other, with each representing a distinct and clearly recognizable concept such as visible text, dominant colors, distinct shapes, or obvious objects. 
+        Avoid abstract, technical, or overly specific terms unlikely to be used in everyday search. 
+        Do not include duplicates, synonyms, or explanations. 
+        Output strictly in this format: ['tag1', 'tag2', 'tag3', ...].
+
+    """
+    if tag_names:
+        text += f""" If the following list contains tags already used to categorize previous images — {', '.join(tag_names)} — identify which of these also apply to the current image and include them in the array. 
+        If there are additional key attributes not in the list, add them as new tags. """
+
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json"
+    )
+    
+    response  = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=[
+            types.Part.from_bytes(
+                data=data,
+                mime_type=mime_type
+            ),
+            text
+        ],
+        config=config
+    )
+    res_dict = json.loads(response.text)
+
+    # Extract the text from the first candidate's parts
+    # text_value = (
+    #     res_dict.get("candidates", [{}])[0]
+    #     .get("content", {})
+    #     .get("parts", [{}])[0]
+    #     .get("text", "")
+    # )
+
+    # Convert that text (which should be a JSON array string) into a Python list
+    # tags_list = json.loads(text_value)
+    return res_dict
+
+
+async def save_tags_and_update_post(tags_list: list[str], user_id: ObjectId, post_id: ObjectId):
+    """Save tags to tags_collection with user_id and update the post's tag_names."""
+
+    # Prepare bulk upsert operations for tags
+    operations = [
+        UpdateOne(
+            {"name": tag},
+            {"$addToSet": {"user_id": user_id}},
+            upsert=True
+        )
+        for tag in tags_list
+    ]
+
+    if not operations:
+        return
+
+    # Run both updates concurrently
+    await asyncio.gather(
+        tags_collection.bulk_write(operations),
+        posts_collection.update_one(
+            {"_id": post_id},
+            {"$addToSet": {"tag_names": {"$each": tags_list}}}
+        )
+    )
+    return True
+
+
+def fetch_mime_type(b64_data) -> str:
+    """Fetch the MIME type from base64-encoded bytes using python-magic."""
+    raw_bytes = base64.b64decode(b64_data)
+    mime = magic.Magic(mime=True)
+    return mime.from_buffer(raw_bytes)

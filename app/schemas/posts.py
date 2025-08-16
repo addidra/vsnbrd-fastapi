@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Dict, List
+from typing import Dict, List, Optional
 from bson import ObjectId
 from datetime import datetime
 from enum import Enum
@@ -53,7 +53,7 @@ class Post(MongoBaseModel):
     file_type: FILE_TYPE
     message_id: str
     created_at: datetime = Field(default_factory=datetime.now)
-    tag_ids: List[PyObjectId] = []
+    tag_names: List[str] = []
 
 
 class Tags(MongoBaseModel):

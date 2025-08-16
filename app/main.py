@@ -6,9 +6,8 @@ import os
 from app.actions.telegram import TelegramFilePathFetcher
 import asyncio
 from app.dependency import users_collection, posts_collection, tags_collection
-from app.schemas.users import User
-from app.schemas.posts import Post,FILE_TYPE, ResolutionDetails, FileDetails
-from app.actions.telegram_bot import serialize_doc, send_error_msg, handle_new_user, is_duplicate_post, extract_photo_details, save_post
+from app.actions.telegram_bot import serialize_doc, send_msg, handle_new_user, is_duplicate_post, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type
+import base64
 
 load_dotenv()
 
@@ -42,7 +41,7 @@ async def telegram_webhook(update: dict = Body(...)):
 @app.get('/test')
 async def test():
     try:
-        res = await send_error_msg(
+        res = await send_msg(
             text="This is a test error message, You cannot share your private information as this is publically accessed",
             chat_id="1892630283"  # Replace with a valid chat ID for testing
         )
@@ -94,6 +93,7 @@ def get_user_from_db():
         return {"error": str(e)}
     
 import logging
+import mimetypes
 
 async def process_update(update: dict):
     """Main webhook update processor."""
@@ -115,14 +115,27 @@ async def process_update(update: dict):
         # Handle photo messages
         elif message.get("photo"):
             message_id = str(message.get("message_id"))
-
-            if await is_duplicate_post(user_id, message_id):
-                print("Duplicate post detected. Skipping.")
-                return
-
+            
+            if await users_collection.find_one({"user_id": user_id}) is None:
+                await handle_new_user(user, chat_id)
+                
             file_details = await extract_photo_details(message["photo"])
-            await save_post(user_id, message_id, message.get("caption", ""), file_details)
+            await send_msg(text=f"Extracted Photo Detail {file_details}", chat_id=chat_id, error=False) if file_details else None
+            post_id = await save_post(user_id, message_id, message.get("caption", ""), file_details, chat_id=chat_id)
+
+            # fetch the photo byte from post file
+            response = requests.get(os.getenv("TELE_FILE_URL") + (file_details.low or file_details.medium or file_details.high).file_path)
+            base64_bytes = base64.b64encode(response.content).decode("utf-8")
+            mime_type, _ = mimetypes.guess_type(file_details.high.file_path)
+            await send_msg(text=f"Guess: {mime_type} {base64_bytes[:30]}...", chat_id=chat_id, error=False)
+            if not mime_type:
+                mime_type = fetch_mime_type(str(base64_bytes))
+                await send_msg(text=f"Read: {mime_type}", chat_id=chat_id, error=False)
+            tags_list = await generate_tags(mime_type=mime_type, data=base64_bytes, user_id=user_id)
+            done = await save_tags_and_update_post(tags_list, user_id, post_id)
+            if done:
+                await send_msg(text=f"Tags {tags_list} added to post {post_id}", chat_id=chat_id, error=False)
 
     except Exception as e:
-        await send_error_msg(text=str(e), chat_id=chat_id)
+        await send_msg(text=str(e), chat_id=chat_id)
         print(f"Webhook processing failed: {e}", flush=True)

@@ -7,17 +7,17 @@ load_dotenv()
 from google import genai
 
 # The client gets the API key from the environment variable `GEMINI_API_KEY`.
-# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # MongoDB connection string
 uri = os.getenv("MONGO_DB")
 
 # Create a new client and connect to the server
 try:
-    client = AsyncMongoClient(uri)
-    # client = MongoClient(uri, server_api=ServerApi('1'))
+    mongoClient = AsyncMongoClient(uri)
+    # mongoClient = MongoClient(uri, server_api=ServerApi('1'))
     # Configure Database
-    db = client.oivsnbrd
+    db = mongoClient.oivsnbrd
     users_collection = db.users
     posts_collection = db.posts
     tags_collection = db.tags
