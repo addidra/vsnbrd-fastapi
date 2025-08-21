@@ -1,20 +1,17 @@
-import base64
 from telegram import Bot
 from dotenv import load_dotenv
-import os
-import magic
-import asyncio
-import aiohttp
 from app.dependency import users_collection, posts_collection,tags_collection, client
 from app.schemas.users import User
 from app.schemas.posts import Post, FILE_TYPE, ResolutionDetails, FileDetails
 from bson import ObjectId
 from pymongo import UpdateOne
-import json
 from google.genai import types
+import mimetypes, requests, json, aiohttp, asyncio, magic, os, base64
+
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_API")
+TELE_FILE_URL = os.getenv("TELE_FILE_URL")
 bot = Bot(BOT_TOKEN)
 
 TELE_FILE_BASE_URL = f"https://api.telegram.org/file/bot{BOT_TOKEN}/"
@@ -25,24 +22,57 @@ async def run_tele_api(endpoint, params=None, method='get'):
     async with aiohttp.ClientSession() as session:
         if method.lower() == 'get':
             async with session.get(url, params=params) as response:
-                if response.status != 200:
-                    raise Exception(f"Response status: {response.status}")
-                return await response.json()
+                data = await response.json()
+                return {"ok": response.status == 200, "status": response.status, **data}
         elif method.lower() == 'post':
             async with session.post(url, json=params) as response:
-                if response.status != 200:
-                    raise Exception(f"Response status: {response.status}")
-                return await response.json()
+                data = await response.json()
+                return {"ok": response.status == 200, "status": response.status, **data}
 
-        
-async def get_file_path(file_id):
+
+
+async def get_file_path(file_id, message_id, chat_id, resolution, user_id):
     """Fetch the file path for a given file ID."""
     response = await run_tele_api(f"getFile?file_id={file_id}")
-    # file_path = response.get("data", {}).get("result", "").get("photos")[0][0].get(file_id,"")
-    file_path = response.get("result", {}).get("file_path", "")
-    if not file_path:
-        raise Exception("File path not found")
-    return file_path
+    if response["ok"]:
+        file_path = response.get("result", {}).get("file_path", "")
+        return file_path
+    # If not ok, re-send message to user to get fresh file_id
+    resend = await run_tele_api("forwardMessage", {
+        "chat_id": int(chat_id),
+        "from_chat_id": int(chat_id),
+        "message_id": int(message_id)
+    })
+
+    if not resend.get("ok"):
+        raise Exception("Failed to resend message to fetch new file_id", resend)
+    
+    photo_array = resend.get("result", {}).get("photo", [{}])
+    new_file_id = ""
+    
+    if resolution == "high":
+        new_file_id = photo_array[-1].get("file_id")
+    elif resolution == "medium":
+        new_file_id = photo_array[-2].get("file_id") if len(photo_array) > 1 else photo_array[-1].get("file_id")
+    elif resolution == "low":
+        new_file_id = photo_array[0].get("file_id") if photo_array else ""
+
+    response = await run_tele_api(f"getFile?file_id={new_file_id}")
+    if response["ok"]:
+        new_file_path = response.get("result", {}).get("file_path", "")
+    
+    await posts_collection.update_one(
+        {"user_id": user_id, "message_id": message_id},
+        {
+            "$set": {
+                f"file_details.{resolution}.file_id": new_file_id,
+                f"file_details.{resolution}.file_path": new_file_path
+            }
+        }
+    )    
+    
+    return new_file_path    
+    
 
 def serialize_doc(doc):
     doc['_id'] = str(doc['_id'])
@@ -259,8 +289,25 @@ async def save_tags_and_update_post(tags_list: list[str], user_id: ObjectId, pos
     return True
 
 
-def fetch_mime_type(b64_data) -> str:
+def fetch_mime_type(b64_data, file_path) -> str:
     """Fetch the MIME type from base64-encoded bytes using python-magic."""
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if mime_type:
+        return mime_type
     raw_bytes = base64.b64decode(b64_data)
     mime = magic.Magic(mime=True)
     return mime.from_buffer(raw_bytes)
+
+async def get_image(file_path: str):
+    """Return an image from a file path."""
+    try:
+        url = f"{TELE_FILE_URL}{file_path}"
+        response = requests.get(url)
+        base64_bytes = base64.b64encode(response.content).decode("utf-8")
+        mimetype = fetch_mime_type(base64_bytes, file_path)
+        if response.status_code == 200:
+            return {"ok":True,"content": response.content, "media_type": mimetype}
+        else:
+            return {"ok": False}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
