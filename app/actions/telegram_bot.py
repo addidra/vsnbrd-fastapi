@@ -31,12 +31,15 @@ async def run_tele_api(endpoint, params=None, method='get'):
 
 
 
-async def get_file_path(file_id, message_id, chat_id, resolution, user_id):
+async def get_file_path(file_id, message_id = None, chat_id = None, resolution = None, user_id = None):
     """Fetch the file path for a given file ID."""
     response = await run_tele_api(f"getFile?file_id={file_id}")
     if response["ok"]:
         file_path = response.get("result", {}).get("file_path", "")
         return file_path
+    
+    if not (message_id and chat_id and resolution and user_id):
+        return None
     # If not ok, re-send message to user to get fresh file_id
     resend = await run_tele_api("forwardMessage", {
         "chat_id": int(chat_id),
