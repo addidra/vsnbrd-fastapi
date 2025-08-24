@@ -167,7 +167,6 @@ def get_user_from_db():
         return {"error": str(e)}
     
 import logging
-import mimetypes
 
 async def process_update(update: dict):
     """Main webhook update processor."""
@@ -209,6 +208,9 @@ async def process_update(update: dict):
             if done:
                 await send_msg(text=f"Tags {tags_list} added to post {post_id}", chat_id=chat_id, error=False)
 
+        else:
+            await send_msg(text="VSNBRD only supports Compressed Image files at the moment", chat_id=chat_id, error=False)
+            
     except Exception as e:
         await send_msg(text=str(e), chat_id=chat_id)
         print(f"Webhook processing failed: {e}", flush=True)
