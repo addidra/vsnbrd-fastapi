@@ -22,7 +22,7 @@ router = APIRouter()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://vsnbrd-addidras-projects.vercel.app","https://vsnbrd.vercel.app"],
+    allow_origins=["https://vsnbrd-addidras-projects.vercel.app","https://vsnbrd.vercel.app","https://yearly-civil-starling.ngrok-free.app/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
