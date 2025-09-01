@@ -42,7 +42,7 @@ class FileDetails(MongoBaseModel):
 class ResolutionDetails(MongoBaseModel):
     high: FileDetails
     medium: Optional[FileDetails] = None
-    low: Optional[FileDetails] = None
+    # low: Optional[FileDetails] = None
 
 
 # Post model

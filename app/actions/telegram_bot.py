@@ -57,8 +57,6 @@ async def get_file_path(file_id, message_id = None, chat_id = None, resolution =
         new_file_id = photo_array[-1].get("file_id")
     elif resolution == "medium":
         new_file_id = photo_array[-2].get("file_id") if len(photo_array) > 1 else photo_array[-1].get("file_id")
-    elif resolution == "low":
-        new_file_id = photo_array[0].get("file_id") if photo_array else ""
 
     response = await run_tele_api(f"getFile?file_id={new_file_id}")
     if response["ok"]:
@@ -164,7 +162,7 @@ async def is_duplicate_post(user_id: str, message_id: str) -> bool:
 
 
 async def extract_photo_details(photo_list: list) -> ResolutionDetails:
-    """Extract resolution file details dynamically (1=high, 2=high+medium, 3+=high+medium+low)."""
+    """Extract resolution file details dynamically (1=high, 2=high+medium)."""
     file_details = []
 
     # Traverse and fetch file paths
@@ -175,12 +173,9 @@ async def extract_photo_details(photo_list: list) -> ResolutionDetails:
 
     # Assign based on available count
     if len(file_details) == 1:
-        return ResolutionDetails(high=file_details[-1], medium=None, low=None)
+        return ResolutionDetails(high=file_details[-1], medium=None)
     elif len(file_details) == 2:
-        return ResolutionDetails(high=file_details[-1], medium=file_details[-2], low=None)
-    else:
-        return ResolutionDetails(high=file_details[-1], medium=file_details[-2], low=file_details[-3])
-
+        return ResolutionDetails(high=file_details[-1], medium=file_details[-2])
 
 async def save_post(user_id: str, message_id: str, caption: str, file_details: ResolutionDetails, chat_id: str):
     """Insert a new post and link it to the user."""
