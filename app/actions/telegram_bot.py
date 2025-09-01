@@ -174,7 +174,7 @@ async def extract_photo_details(photo_list: list) -> ResolutionDetails:
     # Assign based on available count
     if len(file_details) == 1:
         return ResolutionDetails(high=file_details[-1], medium=None)
-    elif len(file_details) == 2:
+    else:
         return ResolutionDetails(high=file_details[-1], medium=file_details[-2])
 
 async def save_post(user_id: str, message_id: str, caption: str, file_details: ResolutionDetails, chat_id: str):
