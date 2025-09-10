@@ -49,7 +49,6 @@ async def getImage(file_path: str = Query(...)):
         response = await get_image(file_path=file_path)  # await + dict response
         if response["ok"]:
             return Response(content=response["content"], media_type=response["media_type"])
-        
         # fallback to DB if image not found at URL
         pipeline = [
             {
@@ -64,19 +63,31 @@ async def getImage(file_path: str = Query(...)):
                 "$project": {
                     "user_id": 1,
                     "message_id": 1,
-                    "file_details": {
-                        "high": {
-                            "file_id": "$file_details.high.file_id",
-                            "file_path": "$file_details.high.file_path"
-                        },
-                        "medium": {
-                            "file_id": "$file_details.medium.file_id",
-                            "file_path": "$file_details.medium.file_path"
-                        }
+                    "resolution": {
+                        "$cond": [
+                            {"$eq": ["$file_details.high.file_path", file_path]},
+                            "high",
+                            "medium"
+                        ]
+                    },
+                    "file_id": {
+                        "$cond": [
+                            {"$eq": ["$file_details.high.file_path", file_path]},
+                            "$file_details.high.file_id",
+                            "$file_details.medium.file_id"
+                        ]
+                    },
+                    "file_path": {
+                        "$cond": [
+                            {"$eq": ["$file_details.high.file_path", file_path]},
+                            "$file_details.high.file_path",
+                            "$file_details.medium.file_path"
+                        ]
                     }
                 }
             }
         ]
+
 
 
         post = await (await posts_collection.aggregate(pipeline)).to_list()

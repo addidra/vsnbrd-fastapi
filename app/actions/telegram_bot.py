@@ -306,6 +306,6 @@ async def get_image(file_path: str):
         if response.status_code == 200:
             return {"ok":True,"content": response.content, "media_type": mimetype}
         else:
-            return {"ok": False}
+            return {"ok": False, "error": f"{response}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
