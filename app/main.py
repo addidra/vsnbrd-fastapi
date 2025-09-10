@@ -1,13 +1,10 @@
 from fastapi import FastAPI, Query, Response, APIRouter,HTTPException, Body
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
-import requests
-import os
+import requests, os, base64, logging, asyncio
 from app.actions.telegram import TelegramFilePathFetcher
-import asyncio
 from app.dependency import users_collection, posts_collection, tags_collection
 from app.actions.telegram_bot import serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image
-import base64
 
 load_dotenv()
 
@@ -146,6 +143,60 @@ async def get_user_posts(user_id: str = Query(...)):
     except Exception as e:
         return {"ok": False, "message": str(e)}
     
+@app.get("/search")
+async def search_posts(query: str = Query(...), user_id: str = Query(...)):
+    try:
+        # First try Atlas Search autocomplete
+        tag_cursor = await tags_collection.aggregate([
+            {
+                "$search": {
+                    "index": "search",  # the index you created in Atlas
+                    "autocomplete": {
+                        "query": query,
+                        "path": "name",
+                        "fuzzy": { "maxEdits": 1 }  # typo-tolerance
+                    }
+                }
+            },
+            {"$match": {"user_id": user_id}},
+            {"$limit": 10}
+        ])
+
+        tags = await tag_cursor.to_list(length=None)
+
+        # Fallback to regex if Atlas Search returned nothing
+        if not tags:
+            tags = await tags_collection.find(
+                {
+                    "name": {"$regex": query, "$options": "i"},
+                    "user_id": user_id
+                }
+            ).to_list(length=None)
+            print(f"Regex fallback")
+
+        tag_names = [t["name"] for t in tags]
+        print(f"Found tags: {tag_names}")
+
+        search_results = await posts_collection.find(
+            {"tag_names": {"$in": tag_names}},
+            {
+                "file_details": 1,
+                "caption": 1,
+                "tag_names": 1,
+                "created_at": 1,
+                "_id": 0
+            }
+        ).to_list(length=None)
+
+        if not search_results:
+            return {"ok": False, "message": "No posts found matching the query."}
+
+        return search_results
+
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+
+
 @app.get('/getFilePaths')
 def getFilePaths(user_id: str = Query(...)):
     fetcher = TelegramFilePathFetcher(BOT_API,user_id)
@@ -163,7 +214,6 @@ def get_user_from_db():
     except Exception as e:
         return {"error": str(e)}
     
-import logging
 
 async def process_update(update: dict):
     """Main webhook update processor."""
