@@ -64,33 +64,20 @@ async def getImage(file_path: str = Query(...)):
                 "$project": {
                     "user_id": 1,
                     "message_id": 1,
-                    "resolution": {
-                        "$cond": [
-                            {"$eq": ["$file_details.high.file_path", file_path]},
-                            "high",
-                            {
-                                "$cond": [
-                                    {"$eq": ["$file_details.medium.file_path", file_path]},
-                                    "medium"
-                                ]
-                            }
-                        ]
-                    },
-                    "file_id": {
-                        "$cond": [
-                            {"$eq": ["$file_details.high.file_path", file_path]},
-                            "$file_details.high.file_id",
-                            {
-                                "$cond": [
-                                    {"$eq": ["$file_details.medium.file_path", file_path]},
-                                    "$file_details.medium.file_id"
-                                ]
-                            }
-                        ]
+                    "file_details": {
+                        "high": {
+                            "file_id": "$file_details.high.file_id",
+                            "file_path": "$file_details.high.file_path"
+                        },
+                        "medium": {
+                            "file_id": "$file_details.medium.file_id",
+                            "file_path": "$file_details.medium.file_path"
+                        }
                     }
                 }
             }
         ]
+
 
         post = await (await posts_collection.aggregate(pipeline)).to_list()
         if post:
