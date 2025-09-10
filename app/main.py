@@ -176,7 +176,7 @@ async def search_posts(query: str = Query(...), user_id: str = Query(...)):
         print(f"Found tags: {tag_names}")
 
         search_results = await posts_collection.find(
-            {"tag_names": {"$in": tag_names}},
+            {"tag_names": {"$in": tag_names}, "user_id": user_id},
             {
                 "file_details": 1,
                 "caption": 1,
