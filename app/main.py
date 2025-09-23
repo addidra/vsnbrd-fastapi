@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Query, Response, APIRouter,HTTPException, Body
+from fastapi import Depends, FastAPI, Query, Response, APIRouter,HTTPException, Body
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 import requests, os, base64, logging, asyncio
+from app.actions.security import verify_telegram_auth
 from app.actions.telegram import TelegramFilePathFetcher
 from app.dependency import users_collection, posts_collection, tags_collection
-from app.actions.telegram_bot import serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image
+from app.actions.telegram_bot import remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
 
 load_dotenv()
 
@@ -259,3 +260,29 @@ async def process_update(update: dict):
     except Exception as e:
         await send_msg(text=str(e), chat_id=chat_id)
         print(f"Webhook processing failed: {e}", flush=True)
+
+@app.delete("/deletePost")
+async def delete_post(file_path: str = Query(...)):
+    try:
+        post_res = await fetch_post_from_file_path(file_path)
+        if not post_res.get("ok"):
+            return {"ok": False, "message": "Post Not Found"}
+
+        post = post_res.get("post")
+        print(f"Deleting post: {post['_id']}", flush=True)
+        # Delete associated tags if no other posts reference them
+        delete_res = await posts_collection.delete_one({"_id": post.get('_id')})
+        if delete_res.deleted_count == 0:
+            return {"ok": False, "message": "Failed to delete post"}
+        return {"ok": True, "message": "Post deleted successfully"}
+    except Exception as e:
+        return {"ok": False, "message":f"Error: {str(e)}"}
+    
+@app.delete("/removeTagFromPost")
+async def remove_tag(name: str = Body(...), file_path: str = Body(...), telegram_data: dict = Depends(verify_telegram_auth)):
+    try:
+        user_id = telegram_data.get("id")
+        result = await remove_tag_from_post(name, file_path, user_id)
+        return result
+    except Exception as e:
+        return {"ok": False, "message": f"Error: {str(e)}"}

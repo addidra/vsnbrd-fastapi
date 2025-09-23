@@ -1,10 +1,11 @@
 from telegram import Bot
 from dotenv import load_dotenv
-from app.dependency import users_collection, posts_collection,tags_collection, client
+from app.dependency import users_collection, posts_collection,tags_collection, client, mongoClient
 from app.schemas.users import User
 from app.schemas.posts import Post, FILE_TYPE, ResolutionDetails, FileDetails
 from bson import ObjectId
 from pymongo import UpdateOne
+from pymongo.errors import PyMongoError
 from google.genai import types
 import mimetypes, requests, json, aiohttp, asyncio, magic, os, base64
 
@@ -309,3 +310,62 @@ async def get_image(file_path: str):
             return {"ok": False, "error": f"{response}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    
+async def fetch_post_from_file_path(file_path: str):
+    """Fetch post details from the database using the file path."""
+    try:
+        post = await posts_collection.find_one({
+            "$or": [
+                {"file_details.high.file_path": file_path},
+                {"file_details.medium.file_path": file_path}
+            ]
+        })
+        if post:
+            return {"ok": True, "post": post}
+        else:
+            return {"ok": False, "message": "Post not found"}
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+    
+async def remove_tag_from_post(name: str, file_path: str, user_id: str):
+    """Remove a tag from a post and update the tag's user_id list.
+
+    Args:
+        name (str): The name of the tag to remove.
+        file_path (str): The file path of the post.
+        user_id (str): The user ID of the user removing the tag.
+
+    Returns:
+        dict: A dictionary indicating the success or failure of the operation.
+    """
+    async with await mongoClient.start_session() as session:
+        try:
+            async with session.start_transaction():
+                tag_doc = await tags_collection.find_one({"name": name}, session=session)
+                if not tag_doc:
+                    return {"ok": False, "message": "Tag not found"}
+
+                post = await fetch_post_from_file_path(file_path=file_path)
+                if not post.get("ok"):
+                    return {"ok": False, "message": "Post not found"}
+
+                # Remove the tag from the post
+                await posts_collection.update_one(
+                    {"_id": post["post"]["_id"]},
+                    {"$pull": {"tag_names": name}},
+                    session=session
+                )
+
+                # Remove user_id from the tag's user_id list
+                await tags_collection.update_one(
+                    {"_id": tag_doc["_id"]},
+                    {"$pull": {"user_id": user_id}},
+                    session=session
+                )
+
+            # If all succeeds, transaction commits automatically
+            return {"ok": True, "message": "Tag removed from post"}
+
+        except PyMongoError as e:
+            # Any error -> transaction rolls back automatically
+            return {"ok": False, "message": f"Transaction failed: {str(e)}"}

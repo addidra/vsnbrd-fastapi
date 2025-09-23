@@ -21,6 +21,7 @@ try:
     users_collection = db.users
     posts_collection = db.posts
     tags_collection = db.tags
+    boards_collection = db.boards
     print("MongoDB connection successful")
 except Exception as e:
     print(f"Error connecting to MongoDB: {e}")
