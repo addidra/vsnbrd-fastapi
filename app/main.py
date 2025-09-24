@@ -279,10 +279,11 @@ async def delete_post(file_path: str = Query(...)):
         return {"ok": False, "message":f"Error: {str(e)}"}
     
 @app.delete("/removeTagFromPost")
-async def remove_tag(name: str = Body(...), file_path: str = Body(...), telegram_data: dict = Body(...)):
+# async def remove_tag(name: str = Body(...), file_path: str = Body(...), telegram_data: dict = Body(...)):
+async def remove_tag(name: str = Body(...), file_path: str = Body(...), user_id: str = Body(...)):
     try:
-        verified = verify_telegram_auth(telegram_data)
-        user_id = verified.get("id")
+        # verified = verify_telegram_auth(telegram_data)
+        # user_id = verified.get("id")
         result = await remove_tag_from_post(name, file_path, user_id)
         return result
     except Exception as e:
