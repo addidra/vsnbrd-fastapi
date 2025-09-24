@@ -327,6 +327,9 @@ async def fetch_post_from_file_path(file_path: str):
     except Exception as e:
         return {"ok": False, "message": str(e)}
     
+from pymongo.errors import PyMongoError
+from bson import ObjectId
+
 async def remove_tag_from_post(name: str, file_path: str, user_id: str):
     """Remove a tag from a post and update the tag's user_id list.
 
@@ -338,34 +341,38 @@ async def remove_tag_from_post(name: str, file_path: str, user_id: str):
     Returns:
         dict: A dictionary indicating the success or failure of the operation.
     """
-    async with mongoClient.start_session() as session:
-        try:
-            async with session.start_transaction():
-                tag_doc = await tags_collection.find_one({"name": name}, session=session)
-                if not tag_doc:
-                    return {"ok": False, "message": "Tag not found"}
+    session = mongoClient.start_session()
+    try:
+        session.start_transaction()
+        tag_doc = await tags_collection.find_one({"name": name}, session=session)
+        if not tag_doc:
+            session.abort_transaction()
+            return {"ok": False, "message": "Tag not found"}
 
-                post = await fetch_post_from_file_path(file_path=file_path)
-                if not post.get("ok"):
-                    return {"ok": False, "message": "Post not found"}
+        post_res = await fetch_post_from_file_path(file_path=file_path)
+        if not post_res.get("ok"):
+            session.abort_transaction()
+            return {"ok": False, "message": "Post not found"}
 
-                # Remove the tag from the post
-                await posts_collection.update_one(
-                    {"_id": post["post"]["_id"]},
-                    {"$pull": {"tag_names": name}},
-                    session=session
-                )
+        post = post_res["post"]
+        await posts_collection.update_one(
+            {"_id": post["_id"]},
+            {"$pull": {"tag_names": name}},
+            session=session
+        )
+        await tags_collection.update_one(
+            {"_id": tag_doc["_id"]},
+            {"$pull": {"user_id": user_id}},
+            session=session
+        )
 
-                # Remove user_id from the tag's user_id list
-                await tags_collection.update_one(
-                    {"_id": tag_doc["_id"]},
-                    {"$pull": {"user_id": user_id}},
-                    session=session
-                )
+        session.commit_transaction()
+        return {"ok": True, "message": "Tag removed from post"}
 
-            # If all succeeds, transaction commits automatically
-            return {"ok": True, "message": "Tag removed from post"}
+    except PyMongoError as e:
+        session.abort_transaction()
+        return {"ok": False, "message": f"Transaction failed: {str(e)}"}
 
-        except PyMongoError as e:
-            # Any error -> transaction rolls back automatically
-            return {"ok": False, "message": f"Transaction failed: {str(e)}"}
+    finally:
+        session.end_session()
+
