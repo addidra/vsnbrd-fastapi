@@ -338,7 +338,7 @@ async def remove_tag_from_post(name: str, file_path: str, user_id: str):
     Returns:
         dict: A dictionary indicating the success or failure of the operation.
     """
-    async with await mongoClient.start_session() as session:
+    async with mongoClient.start_session() as session:
         try:
             async with session.start_transaction():
                 tag_doc = await tags_collection.find_one({"name": name}, session=session)
