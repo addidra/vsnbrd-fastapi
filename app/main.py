@@ -49,10 +49,10 @@ async def test():
 async def getImage(file_path: str = Query(...)):
     try:
         response = await get_image(file_path=file_path)  # await + dict response
-        # if response["ok"]:
-        #     return Response(content=response["content"], media_type=response["media_type"])
         if response["ok"]:
-            return StreamingResponse(response["raw"], media_type=response["media_type"])
+            return Response(content=response["content"], media_type=response["media_type"])
+        # if response["ok"]:
+        #     return StreamingResponse(response["raw"], media_type=response["media_type"])
         # fallback to DB if image not found at URL
         pipeline = [
             {
