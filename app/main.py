@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 import requests, os, base64, logging, asyncio
 from app.actions.security import verify_telegram_auth
 from app.actions.telegram import TelegramFilePathFetcher
-from app.dependency import users_collection, posts_collection, tags_collection
+from app.dependency import users_collection, posts_collection, tags_collection, boards_collection
 from app.actions.telegram_bot import remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
 
 load_dotenv()
@@ -144,7 +144,23 @@ async def get_user_posts(user_id: str = Query(...)):
     
     except Exception as e:
         return {"ok": False, "message": str(e)}
+
+from bson import ObjectId
+
+@app.post("/getUserSpecificPosts")
+async def get_user_specific_posts(user_id: str = Body(...), post_ids: list[str] = Body(...)):
+    try:
+        object_ids = [ObjectId(pid) for pid in post_ids]
+        user_posts = await posts_collection.find({"user_id": user_id, "_id": {"$in": object_ids}}).to_list(length=None)
+
+        if not user_posts:
+            return {"ok":False, "message": "No posts found for this user."}
+        
+        return [serialize_doc(post) for post in user_posts]
     
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+
 @app.get("/search")
 async def search_posts(query: str = Query(...), user_id: str = Query(...)):
     try:
@@ -300,5 +316,65 @@ async def add_tag(name: str = Body(..., embed=True), file_path: str = Body(..., 
             return {"ok": False, "message": "Post Not Found"}
         result = await save_tags_and_update_post([name], user_id, post.get("post", {}).get("_id"))
         return result
+    except Exception as e:
+        return {"ok": False, "message": f"Error: {str(e)}"}
+    
+@app.post("/createBoard")
+async def create_board(name: str = Body(..., embed=True), user_id: str = Body(..., embed=True), file_paths: list = Body(..., embed=True)):
+    try:
+        post_ids = []
+        for fp in file_paths:
+            post = await fetch_post_from_file_path(fp)
+            if not post.get("ok"):
+                return {"ok": False, "message": f"Post Not Found for file_path: {fp}"}
+            post_ids.append(post.get("post", {}).get("_id"))
+        
+        # Create new board structure
+        new_board = {
+            "name": name,
+            "user_id": user_id,
+            "posts": post_ids
+        }
+
+        # Add the new board to the user's boards array
+        new_board = await boards_collection.insert_one(new_board)
+
+        if new_board.inserted_id:
+            return {"ok": True, "message": "Board created successfully."}
+        else:
+            return {"ok": False, "message": "Failed to create board."}
+
+    except Exception as e:
+        return {"ok": False, "message": f"Error: {str(e)}"}
+    
+@app.get("/getUserBoards")
+async def get_user_boards(user_id: str = Query(...)):
+    try:
+        user_boards = await boards_collection.find({"user_id": user_id}).to_list(length=None)
+        preview_imgs = []
+        for board in user_boards:
+            for post_id in board.get("posts", []):
+                if len(preview_imgs) >= 3:
+                    break
+                post = await posts_collection.find_one({"_id": post_id})
+                preview_imgs.append(post["file_details"].get("medium").get("file_path") or post["file_details"].get("high").get("file_path"))
+            board["preview_images"] = preview_imgs
+            board["posts"] = [str(post_id) for post_id in board["posts"]]
+            preview_imgs = []
+        if not user_boards:
+            return []  # return empty list if no boards found
+        
+        return [serialize_doc(board) for board in user_boards]
+    
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+
+@app.delete("/deleteBoard")
+async def delete_board(board_id: str = Query(...), user_id: str = Query(...)):
+    try:
+        delete_res = await boards_collection.delete_one({"_id": ObjectId(board_id), "user_id": user_id})
+        if delete_res.deleted_count == 0:
+            return {"ok": False, "message": "Failed to delete board or board not found"}
+        return {"ok": True, "message": "Board deleted successfully"}
     except Exception as e:
         return {"ok": False, "message": f"Error: {str(e)}"}

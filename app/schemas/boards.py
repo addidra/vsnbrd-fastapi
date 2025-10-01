@@ -6,5 +6,5 @@ from enum import Enum
 
 class Boards(BaseModel):
     name: str = "Board"
-    post: List[ObjectId] = []
+    posts: List[ObjectId] = []
     created_at: datetime = Field(default_factory=datetime.now)
