@@ -288,3 +288,14 @@ async def remove_tag(name: str = Body(...), file_path: str = Body(...), user_id:
         return result
     except Exception as e:
         return {"ok": False, "message": f"Error: {str(e)}"}
+    
+@app.post("/addTagToPost")
+async def add_tag(name: str = Body(..., embed=True), file_path: str = Body(..., embed=True), user_id: str = Body(..., embed=True)):
+    try:
+        post = await fetch_post_from_file_path(file_path)
+        if not post.get("ok"):
+            return {"ok": False, "message": "Post Not Found"}
+        result = await save_tags_and_update_post([name], user_id, post.get("post", {}).get("_id"))
+        return result
+    except Exception as e:
+        return {"ok": False, "message": f"Error: {str(e)}"}

@@ -216,16 +216,22 @@ async def generate_tags(mime_type: str, data: bytes, user_id: str):
 
     tag_names = [tag["name"] for tag in tags]
     text = """
-        Analyze the provided image or video and return only a JSON array containing up to 7 unique, high-relevance tags that best describe it for casual user search. 
-        Tags must be unrelated to each other, with each representing a distinct and clearly recognizable concept such as visible text, dominant colors, distinct shapes, or obvious objects. 
-        Avoid abstract, technical, or overly specific terms unlikely to be used in everyday search. 
-        Do not include duplicates, synonyms, or explanations. 
-        Output strictly in this format: ['tag1', 'tag2', 'tag3', ...].
-
+        Analyze the provided image or video and return only a JSON array containing up to 7 unique, high-relevance tags that best describe it for casual user search.
+        Tags must be unrelated to each other, with each representing a distinct and clearly recognizable concept such as visible text, dominant colors, distinct shapes, or obvious objects.
+        If the image shows a well-known character, brand, landmark, or object (e.g., Batman, Eiffel Tower, Nike logo), include that as the tag instead of describing its attributes.
+        Avoid abstract, technical, or overly specific terms unlikely to be used in everyday search.
+        Each tag should be a single word or a concise phrase (no more than 3 words).
+        Ensure tags are in English, lowercase, and free of special characters or punctuation.
+        Do not include duplicates, synonyms, or explanations.
+        Output strictly in this format: ['tag1', 'tag2', 'tag3', ...]
     """
     if tag_names:
-        text += f""" If the following list contains tags already used to categorize previous images — {', '.join(tag_names)} — identify which of these also apply to the current image and include them in the array. 
-        If there are additional key attributes not in the list, add them as new tags. """
+        text += f""" 
+        You are given a list of previously used tags: — {', '.join(tag_names)} — 
+        Look at the current image and compare it with the provided list of tags.
+        If some of these tags are relevant for the current image, include at max 3 of them.
+        Any remaining tags you generate should be new and unique (not from the list).
+        Ensure all tags accurately describe the current image’s attributes. """
 
     config = types.GenerateContentConfig(
         response_mime_type="application/json"
@@ -257,7 +263,7 @@ async def generate_tags(mime_type: str, data: bytes, user_id: str):
     return res_dict
 
 
-async def save_tags_and_update_post(tags_list: list[str], user_id: ObjectId, post_id: ObjectId):
+async def save_tags_and_update_post(tags_list: list[str], user_id: str, post_id: ObjectId):
     """Save tags to tags_collection with user_id and update the post's tag_names."""
 
     # Prepare bulk upsert operations for tags
@@ -376,3 +382,5 @@ async def remove_tag_from_post(name: str, file_path: str, user_id: str):
     finally:
         session.end_session()
 
+                    
+                    
