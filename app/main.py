@@ -1,6 +1,7 @@
 from fastapi import Depends, FastAPI, Query, Response, APIRouter,HTTPException, Body
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import requests, os, base64, logging, asyncio
 from app.actions.security import verify_telegram_auth
 from app.actions.telegram import TelegramFilePathFetcher
@@ -48,8 +49,10 @@ async def test():
 async def getImage(file_path: str = Query(...)):
     try:
         response = await get_image(file_path=file_path)  # await + dict response
+        # if response["ok"]:
+        #     return Response(content=response["content"], media_type=response["media_type"])
         if response["ok"]:
-            return Response(content=response["content"], media_type=response["media_type"])
+            return StreamingResponse(response["raw"], media_type=response["media_type"])
         # fallback to DB if image not found at URL
         pipeline = [
             {

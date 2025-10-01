@@ -307,11 +307,11 @@ async def get_image(file_path: str):
     """Return an image from a file path."""
     try:
         url = f"{TELE_FILE_URL}{file_path}"
-        response = requests.get(url)
+        response = requests.get(url, stream=True)
         base64_bytes = base64.b64encode(response.content).decode("utf-8")
         mimetype = fetch_mime_type(base64_bytes, file_path)
         if response.status_code == 200:
-            return {"ok":True,"content": response.content, "media_type": mimetype}
+            return {"ok":True,"raw": response.raw,"content": response.content, "media_type": mimetype}
         else:
             return {"ok": False, "error": f"{response}"}
     except Exception as e:
