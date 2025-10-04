@@ -347,17 +347,17 @@ async def remove_tag_from_post(name: str, file_path: str, user_id: str):
     Returns:
         dict: A dictionary indicating the success or failure of the operation.
     """
-    session = mongoClient.start_session()
+    session = await mongoClient.start_session()
     try:
-        session.start_transaction()
+        await session.start_transaction()
         tag_doc = await tags_collection.find_one({"name": name}, session=session)
         if not tag_doc:
-            session.abort_transaction()
+            await session.abort_transaction()
             return {"ok": False, "message": "Tag not found"}
 
         post_res = await fetch_post_from_file_path(file_path=file_path)
         if not post_res.get("ok"):
-            session.abort_transaction()
+            await session.abort_transaction()
             return {"ok": False, "message": "Post not found"}
 
         post = post_res["post"]
@@ -372,15 +372,15 @@ async def remove_tag_from_post(name: str, file_path: str, user_id: str):
             session=session
         )
 
-        session.commit_transaction()
+        await session.commit_transaction()
         return {"ok": True, "message": "Tag removed from post"}
 
     except PyMongoError as e:
-        session.abort_transaction()
+        await session.abort_transaction()
         return {"ok": False, "message": f"Transaction failed: {str(e)}"}
 
     finally:
-        session.end_session()
+        await session.end_session()
 
                     
                     

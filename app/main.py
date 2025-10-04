@@ -148,10 +148,11 @@ async def get_user_posts(user_id: str = Query(...)):
 from bson import ObjectId
 
 @app.post("/getUserSpecificPosts")
-async def get_user_specific_posts(user_id: str = Body(...), post_ids: list[str] = Body(...)):
+async def get_user_specific_posts(user_id: str = Body(...), board_id: str = Body(...)):
     try:
-        object_ids = [ObjectId(pid) for pid in post_ids]
-        user_posts = await posts_collection.find({"user_id": user_id, "_id": {"$in": object_ids}}).to_list(length=None)
+        board = await boards_collection.find_one({"_id": ObjectId(board_id), "user_id": user_id}, {"posts": 1, "_id": 0})
+        post_ids = board.get("posts", [])
+        user_posts = await posts_collection.find({"user_id": user_id, "_id": {"$in": post_ids}}).to_list(length=None)
 
         if not user_posts:
             return {"ok":False, "message": "No posts found for this user."}
