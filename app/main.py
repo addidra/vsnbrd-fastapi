@@ -355,7 +355,7 @@ async def get_user_boards(user_id: str = Query(...)):
         preview_imgs = []
         for board in user_boards:
             for post_id in board.get("posts", []):
-                if len(preview_imgs) >= 3:
+                if len(preview_imgs) >= 1:
                     break
                 post = await posts_collection.find_one({"_id": post_id})
                 preview_imgs.append(post["file_details"].get("medium").get("file_path") or post["file_details"].get("high").get("file_path"))
