@@ -156,9 +156,9 @@ async def get_user_specific_posts(user_id: str = Body(...), board_id: str = Body
 
         if not user_posts:
             return {"ok":False, "message": "No posts found for this user."}
-        
-        return [serialize_doc(post) for post in user_posts]
-    
+
+        return {"posts":[serialize_doc(post) for post in user_posts], "board":board.get("name")}
+
     except Exception as e:
         return {"ok": False, "message": str(e)}
 
