@@ -341,7 +341,7 @@ async def create_board(name: str = Body(..., embed=True), user_id: str = Body(..
         new_board = await boards_collection.insert_one(new_board)
 
         if new_board.inserted_id:
-            return {"ok": True, "message": "Board created successfully."}
+            return {"ok": True, "message": "Board created successfully.", "board_id": str(new_board.inserted_id)}
         else:
             return {"ok": False, "message": "Failed to create board."}
 
