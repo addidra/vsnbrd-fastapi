@@ -379,3 +379,30 @@ async def delete_board(board_id: str = Query(...), user_id: str = Query(...)):
         return {"ok": True, "message": "Board deleted successfully"}
     except Exception as e:
         return {"ok": False, "message": f"Error: {str(e)}"}
+
+@app.put("/renameBoard")
+async def rename_board(board_id: str = Body(..., embed=True), name: str = Body(..., embed=True)):
+    try:
+        update_res = await boards_collection.update_one({"_id": ObjectId(board_id)}, {"$set": {"name": name}})
+        if update_res.modified_count == 0:
+            return {"ok": False, "message": "Failed to rename board or no changes made"}
+        return {"ok": True, "message": "Board renamed successfully"}
+    except Exception as e:
+        return {"ok": False, "message": f"Error: {str(e)}"}
+    
+@app.put("/updateBoardPosts")
+async def update_board_posts(board_id: str = Body(..., embed=True), file_paths: list = Body(..., embed=True)):
+    try:
+        post_ids = []
+        for fp in file_paths:
+            post = await fetch_post_from_file_path(fp)
+            if not post.get("ok"):
+                return {"ok": False, "message": f"Post Not Found for file_path: {fp}"}
+            post_ids.append(post.get("post", {}).get("_id"))
+        
+        update_res = await boards_collection.update_one({"_id": ObjectId(board_id)}, {"$set": {"posts": post_ids}})
+        if update_res.modified_count == 0:
+            return {"ok": False, "message": "Failed to update board posts or no changes made"}
+        return {"ok": True, "message": "Board posts updated successfully"}
+    except Exception as e:
+        return {"ok": False, "message": f"Error: {str(e)}"}
