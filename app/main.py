@@ -371,7 +371,7 @@ async def get_user_boards(user_id: str = Query(...)):
         return {"ok": False, "message": str(e)}
 
 @app.delete("/deleteBoard")
-async def delete_board(board_id: str = Query(...)):
+async def delete_board(board_id: str = Body(..., embed=True)):
     try:
         delete_res = await boards_collection.delete_one({"_id": ObjectId(board_id)})
         if delete_res.deleted_count == 0:
