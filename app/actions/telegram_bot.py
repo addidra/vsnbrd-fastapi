@@ -307,13 +307,18 @@ async def get_image(file_path: str):
     """Return an image from a file path."""
     try:
         url = f"{TELE_FILE_URL}{file_path}"
-        response = requests.get(url, stream=True)
-        base64_bytes = base64.b64encode(response.content).decode("utf-8")
-        mimetype = fetch_mime_type(base64_bytes, file_path)
+        response = requests.get(url, timeout=10)
+        
         if response.status_code == 200:
-            return {"ok":True,"raw": response.raw,"content": response.content, "media_type": mimetype}
+            base64_bytes = base64.b64encode(response.content).decode("utf-8")
+            mimetype = fetch_mime_type(base64_bytes, file_path)
+            return {
+                "ok": True,
+                "content": response.content,
+                "media_type": mimetype
+            }
         else:
-            return {"ok": False, "error": f"{response}"}
+            return {"ok": False, "error": f"HTTP {response.status_code}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
     
@@ -382,5 +387,11 @@ async def remove_tag_from_post(name: str, file_path: str, user_id: str):
     finally:
         await session.end_session()
 
-                    
-                    
+async def verify_image_path(file_path: str) -> bool:
+    """Check if image URL is still valid without downloading full content"""
+    try:
+        url = f"{TELE_FILE_URL}{file_path}"
+        response = requests.head(url, timeout=5)  # HEAD request is faster
+        return response.status_code == 200
+    except:
+        return False

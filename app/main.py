@@ -6,7 +6,7 @@ import requests, os, base64, logging, asyncio
 from app.actions.security import verify_telegram_auth
 from app.actions.telegram import TelegramFilePathFetcher
 from app.dependency import users_collection, posts_collection, tags_collection, boards_collection
-from app.actions.telegram_bot import remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
+from app.actions.telegram_bot import verify_image_path, remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
 
 load_dotenv()
 
@@ -48,12 +48,13 @@ async def test():
 @app.get('/getImage')
 async def getImage(file_path: str = Query(...)):
     try:
-        response = await get_image(file_path=file_path)  # await + dict response
+        # Try to get image from current path
+        response = await get_image(file_path=file_path)
+        
         if response["ok"]:
             return Response(content=response["content"], media_type=response["media_type"])
-        # if response["ok"]:
-        #     return StreamingResponse(response["raw"], media_type=response["media_type"])
-        # fallback to DB if image not found at URL
+        
+        # If image not found, fetch from DB and update
         pipeline = [
             {
                 "$match": {
@@ -92,24 +93,26 @@ async def getImage(file_path: str = Query(...)):
             }
         ]
 
-
-
-        post = await (await posts_collection.aggregate(pipeline)).to_list()
-        if post:
-            post = post[0]
-
+        posts = await (await posts_collection.aggregate(pipeline)).to_list(length=1)
+        if not posts:
+            raise HTTPException(status_code=404, detail="Post not found in database")
+        
+        post = posts[0]
         file_id = post.get("file_id")
+        
+        # Get user's chat_id
         user_doc = await users_collection.find_one(
             {"user_id": post.get("user_id")},
-            {"chat_id": 1, "_id": 0}  # project only chat_id
+            {"chat_id": 1, "_id": 0}
         )
 
         if not user_doc:
-            raise Exception("User not found")
+            raise HTTPException(status_code=404, detail="User not found")
 
         chat_id = user_doc.get("chat_id")
 
-        file_path = await get_file_path(
+        # Get new file path
+        new_file_path = await get_file_path(
             file_id,
             message_id=post.get("message_id"),
             chat_id=chat_id,
@@ -117,18 +120,23 @@ async def getImage(file_path: str = Query(...)):
             user_id=post.get("user_id")
         )
 
-        response = await get_image(file_path=file_path)
+        # Try to fetch image with new path
+        response = await get_image(file_path=new_file_path)
+        
         if response["ok"]:
+            # Update the file path in database
             await posts_collection.update_one(
                 {"_id": post["_id"]},
-                {"$set": {f"file_details.{post.get('resolution')}.file_path": file_path}}
+                {"$set": {f"file_details.{post.get('resolution')}.file_path": new_file_path}}
             )
             return Response(content=response["content"], media_type=response["media_type"])
 
-        raise Exception("Image not found")
+        raise HTTPException(status_code=404, detail="Image not found even after path refresh")
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
     
 @app.get("/getUserPosts")
@@ -407,14 +415,24 @@ async def update_board_posts(board_id: str = Body(..., embed=True), file_paths: 
     except Exception as e:
         return {"ok": False, "message": f"Error: {str(e)}"}
     
-@app.post("/getTagFromFilePath")
-async def get_tag_from_file_path(file_path: str = Body(..., embed=True)):
+@app.post("/getImageDetails")
+async def get_image_details(file_path: str = Body(..., embed=True)):
     try:
+        # Fetch post from file_path
         post_res = await fetch_post_from_file_path(file_path)
         if not post_res.get("ok"):
             return {"ok": False, "message": "Post Not Found"}
 
         post = post_res.get("post")
-        return {"ok": True, "tag_names": post.get("tag_names", [])}
+        
+        # Verify if the image URL is still valid
+        is_valid = await verify_image_path(file_path)
+        
+        return {
+            "ok": True,
+            "file_path": file_path,
+            "tag_names": post.get("tag_names", []),
+            "is_valid": is_valid
+        }
     except Exception as e:
         return {"ok": False, "message": f"Error: {str(e)}"}
