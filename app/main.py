@@ -371,9 +371,9 @@ async def get_user_boards(user_id: str = Query(...)):
         return {"ok": False, "message": str(e)}
 
 @app.delete("/deleteBoard")
-async def delete_board(board_id: str = Query(...), user_id: str = Query(...)):
+async def delete_board(board_id: str = Query(...)):
     try:
-        delete_res = await boards_collection.delete_one({"_id": ObjectId(board_id), "user_id": user_id})
+        delete_res = await boards_collection.delete_one({"_id": ObjectId(board_id)})
         if delete_res.deleted_count == 0:
             return {"ok": False, "message": "Failed to delete board or board not found"}
         return {"ok": True, "message": "Board deleted successfully"}
