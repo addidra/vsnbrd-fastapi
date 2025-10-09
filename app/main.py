@@ -406,3 +406,15 @@ async def update_board_posts(board_id: str = Body(..., embed=True), file_paths: 
         return {"ok": True, "message": "Board posts updated successfully"}
     except Exception as e:
         return {"ok": False, "message": f"Error: {str(e)}"}
+    
+@app.post("/getTagFromFilePath")
+async def get_tag_from_file_path(file_path: str = Body(..., embed=True)):
+    try:
+        post_res = await fetch_post_from_file_path(file_path)
+        if not post_res.get("ok"):
+            return {"ok": False, "message": "Post Not Found"}
+
+        post = post_res.get("post")
+        return {"ok": True, "tag_names": post.get("tag_names", [])}
+    except Exception as e:
+        return {"ok": False, "message": f"Error: {str(e)}"}
