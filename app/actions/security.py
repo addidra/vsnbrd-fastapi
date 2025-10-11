@@ -46,7 +46,7 @@ def verify_telegram_auth(init_data: str) -> str | None:
         print(f"Auth error: {e}")
         return None
 
-def verify_telegram_auth_debug(init_data_raw: str, token: str, expires_in: int = 3600) -> dict | None:
+def validate_init_data(init_data_raw: str, token: str, expires_in: int = 3600) -> dict | None:
     """
     Validate and parse Telegram Mini Apps init data.
     
