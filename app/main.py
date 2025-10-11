@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import requests, os, base64, logging, asyncio
-from app.actions.security import verify_telegram_auth
+from app.actions.security import verify_telegram_auth, verify_telegram_auth_debug
 from app.actions.telegram import TelegramFilePathFetcher
 from app.dependency import users_collection, posts_collection, tags_collection, boards_collection
 from app.actions.telegram_bot import verify_image_path, remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
@@ -440,51 +440,32 @@ async def get_image_details(file_path: str = Body(..., embed=True)):
 @app.get("/test-verification")
 async def test_verification(x_init_data: str = Header(None)):
     """
-    Test endpoint to verify Telegram authentication.
-    
-    Returns:
-    - success: True if verification passes, False otherwise
-    - user_id: The verified user ID
-    - error: Error message if verification fails
+    Test endpoint with debugging info.
     """
     
-    # Check if header exists
     if not x_init_data:
         raise HTTPException(
             status_code=400,
             detail="Missing X-Init-Data header"
         )
     
-    print(f"Received initData: {x_init_data[:50]}...")  # Log first 50 chars
+    print(f"\n{'='*50}")
+    print(f"Received initData (first 100 chars): {x_init_data[:100]}...")
+    print(f"{'='*50}\n")
     
-    # Verify initData and extract user_id
-    user_id = verify_telegram_auth(x_init_data)
+    result = verify_telegram_auth_debug(x_init_data)
     
-    if not user_id:
+    if not result["success"]:
         raise HTTPException(
             status_code=401,
-            detail="Invalid or tampered authentication data"
+            detail=result.get("error", "Verification failed"),
+            # Include debug info in response
         )
     
-    # Parse user info from initData for additional details
-    try:
-        parsed_data = dict(parse_qsl(unquote(x_init_data)))
-        user_info = json.loads(parsed_data.get("user", "{}"))
-        
-        return {
-            "success": True,
-            "user_id": user_id,
-            "user_info": {
-                "id": user_info.get("id"),
-                "first_name": user_info.get("first_name"),
-                "last_name": user_info.get("last_name"),
-                "username": user_info.get("username"),
-            },
-            "message": "✅ Verification successful!"
-        }
-    except Exception as e:
-        return {
-            "success": True,
-            "user_id": user_id,
-            "message": "✅ Verification successful! (couldn't parse user info)"
-        }
+    return {
+        "success": True,
+        "user_id": result["user_id"],
+        "user_info": result.get("user_info"),
+        "message": "✅ Verification successful!",
+        "debug": result.get("debug")
+    }
