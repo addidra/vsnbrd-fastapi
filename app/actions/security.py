@@ -1,34 +1,49 @@
 import hashlib
 import hmac
-import time
-from fastapi import HTTPException, Depends
+from urllib.parse import unquote, parse_qsl
+import json
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_API")
-BOT_SECRET = hashlib.sha256(BOT_TOKEN.encode()).digest()
 
-def verify_telegram_auth(data: dict):
+SECRET_KEY = os.getenv("BOT_API")
+
+def verify_telegram_auth(init_data: str) -> str | None:
     """
-    Verifies that data is a valid Telegram Login payload
+    Verify Telegram WebApp initData and return user_id.
+    Returns None if verification fails.
     """
-    check_hash = data.pop("hash", None)
-    if not check_hash:
-        raise HTTPException(status_code=401, detail="Missing auth hash")
+    try:
+        parsed_data = dict(parse_qsl(unquote(init_data)))
+        
+        if "hash" not in parsed_data or "user" not in parsed_data:
+            return None
+        
+        hash_value = parsed_data.pop("hash")
+        
+        # Create data check string
+        data_check_string = "\n".join(
+            f"{k}={v}" for k, v in sorted(parsed_data.items())
+        )
+        
+        # Verify hash
+        secret_key = hashlib.sha256(SECRET_KEY.encode()).digest()
+        computed_hash = hmac.new(
+            secret_key,
+            data_check_string.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        
+        if not hmac.compare_digest(computed_hash, hash_value):
+            return None
+        
+        # Extract user_id
+        user_data = json.loads(parsed_data.get("user", "{}"))
+        user_id = str(user_data.get("id"))
+        
+        return user_id if user_id else None
+        
+    except Exception as e:
+        print(f"Auth error: {e}")
+        return None
 
-    # Sort and format data
-    data_check_string = "\n".join([f"{k}={v}" for k, v in sorted(data.items())])
 
-    # Calculate HMAC-SHA256
-    secret_key = BOT_SECRET
-    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-
-    if computed_hash != check_hash:
-        raise HTTPException(status_code=401, detail="Invalid Telegram auth")
-
-    # Optional: expire old logins (to prevent replay attacks)
-    if "auth_date" in data and int(time.time()) - int(data["auth_date"]) > 86400:
-        raise HTTPException(status_code=401, detail="Auth expired")
-
-    return data  # verified Telegram user info

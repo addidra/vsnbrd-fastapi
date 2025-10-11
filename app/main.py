@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI, Query, Response, APIRouter,HTTPException, Body
+from fastapi import Depends, FastAPI, Query, Response, APIRouter,HTTPException, Body, Header
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -133,8 +133,6 @@ async def getImage(file_path: str = Query(...)):
 
         raise HTTPException(status_code=404, detail="Image not found even after path refresh")
 
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -436,3 +434,23 @@ async def get_image_details(file_path: str = Body(..., embed=True)):
         }
     except Exception as e:
         return {"ok": False, "message": f"Error: {str(e)}"}
+    
+# ========== USAGE IN YOUR ENDPOINTS ==========
+@app.get("/secure-endpoint")
+def handle_user_request(x_init_data: str = Header(None)):
+    """Example of how to use in your endpoints"""
+    
+    # Verify and get user_id
+    user_id = verify_telegram_auth(x_init_data)
+    
+    if not user_id:
+        return {"error": "Unauthorized"}, 401
+    
+    # Now you have user_id - use it
+    # Example: fetch_user_data(user_id)
+    # Example: update_user_data(user_id, request_data)
+    
+    return {
+        "success": True,
+        "user_id": user_id
+    }, 200
