@@ -47,7 +47,6 @@ def verify_telegram_auth(init_data: str) -> str | None:
         return None
 
 
-
 def verify_telegram_auth_debug(init_data: str) -> dict:
     """
     Verify Telegram initData with detailed debugging.
@@ -77,18 +76,32 @@ def verify_telegram_auth_debug(init_data: str) -> dict:
         # Verify hash - Step by step
         print(f"Bot token: {SECRET_KEY[:20]}...")
         
-        # Step 1: Hash the bot token
+        # IMPORTANT: Use the RAW bot token, not its SHA256 hash
         secret_key = hashlib.sha256(SECRET_KEY.encode()).digest()
         print(f"Secret key (hashed token): {secret_key.hex()[:20]}...")
         
-        # Step 2: Create HMAC
+        # Try with hashed token first (standard method)
         computed_hash = hmac.new(
             secret_key,
             data_check_string.encode(),
             hashlib.sha256
         ).hexdigest()
-        print(f"\nComputed hash: {computed_hash}")
+        print(f"\nComputed hash (with hashed token): {computed_hash}")
         print(f"Telegram hash:  {hash_value}")
+        
+        # If that doesn't match, try with raw token
+        if computed_hash != hash_value:
+            print("\n⚠️  Hash mismatch! Trying with raw bot token...")
+            computed_hash_raw = hmac.new(
+                SECRET_KEY.encode(),
+                data_check_string.encode(),
+                hashlib.sha256
+            ).hexdigest()
+            print(f"Computed hash (with raw token): {computed_hash_raw}")
+            
+            if computed_hash_raw == hash_value:
+                print("✅ MATCH FOUND! Using raw token works!")
+                computed_hash = computed_hash_raw
         
         # Step 3: Compare
         hashes_match = hmac.compare_digest(computed_hash, hash_value)
