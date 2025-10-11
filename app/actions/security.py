@@ -46,98 +46,84 @@ def verify_telegram_auth(init_data: str) -> str | None:
         print(f"Auth error: {e}")
         return None
 
-
-def verify_telegram_auth_debug(init_data: str) -> dict:
+def verify_telegram_auth_debug(init_data_raw: str, token: str, expires_in: int = 3600) -> dict | None:
     """
-    Verify Telegram initData with detailed debugging.
-    Returns dict with success status and debug info.
+    Validate and parse Telegram Mini Apps init data.
+    
+    Args:
+        init_data_raw: Raw init data string (URL-encoded)
+        token: Bot token for verification
+        expires_in: Time window for valid signatures (in seconds)
+    
+    Returns:
+        Parsed init data dict if valid, None otherwise
     """
     try:
-        parsed_data = dict(parse_qsl(unquote(init_data)))
+        # Parse the init data
+        parsed_data = dict(parse_qsl(unquote(init_data_raw)))
         
-        print("\n=== VERIFICATION DEBUG ===")
-        print(f"Parsed fields: {list(parsed_data.keys())}")
-        
+        # Extract hash and auth_date
         if "hash" not in parsed_data:
-            return {"success": False, "error": "Missing 'hash' field", "debug": "parsed_data keys: " + str(list(parsed_data.keys()))}
+            print("❌ Missing hash field")
+            return None
         
-        if "user" not in parsed_data:
-            return {"success": False, "error": "Missing 'user' field", "debug": "parsed_data keys: " + str(list(parsed_data.keys()))}
+        if "auth_date" not in parsed_data:
+            print("❌ Missing auth_date field")
+            return None
         
         hash_value = parsed_data.pop("hash")
-        print(f"Telegram hash: {hash_value}")
+        auth_date = int(parsed_data.get("auth_date", 0))
         
-        # Create data check string - MUST match exactly what Telegram used
+        # Check if init data is expired
+        current_time = int(datetime.now().timestamp())
+        if current_time - auth_date > expires_in:
+            print(f"❌ Init data expired. Age: {current_time - auth_date}s, Max: {expires_in}s")
+            return None
+        
+        # Create data check string (must be sorted)
         data_check_string = "\n".join(
             f"{k}={v}" for k, v in sorted(parsed_data.items())
         )
-        print(f"\nData check string:\n{data_check_string}\n")
         
-        # Verify hash - Step by step
-        print(f"Bot token: {SECRET_KEY[:20]}...")
+        print("\n=== VERIFICATION ===")
+        print(f"Data check string:\n{data_check_string}\n")
         
-        # IMPORTANT: Use the RAW bot token, not its SHA256 hash
-        secret_key = hashlib.sha256(SECRET_KEY.encode()).digest()
-        print(f"Secret key (hashed token): {secret_key.hex()[:20]}...")
-        
-        # Try with hashed token first (standard method)
+        # Verify hash using the bot token
+        secret_key = hashlib.sha256(token.encode()).digest()
         computed_hash = hmac.new(
             secret_key,
             data_check_string.encode(),
             hashlib.sha256
         ).hexdigest()
-        print(f"\nComputed hash (with hashed token): {computed_hash}")
-        print(f"Telegram hash:  {hash_value}")
         
-        # If that doesn't match, try with raw token
-        if computed_hash != hash_value:
-            print("\n⚠️  Hash mismatch! Trying with raw bot token...")
-            computed_hash_raw = hmac.new(
-                SECRET_KEY.encode(),
-                data_check_string.encode(),
-                hashlib.sha256
-            ).hexdigest()
-            print(f"Computed hash (with raw token): {computed_hash_raw}")
-            
-            if computed_hash_raw == hash_value:
-                print("✅ MATCH FOUND! Using raw token works!")
-                computed_hash = computed_hash_raw
+        print(f"Computed hash: {computed_hash}")
+        print(f"Telegram hash: {hash_value}")
+        print(f"Match: {hmac.compare_digest(computed_hash, hash_value)}")
         
-        # Step 3: Compare
-        hashes_match = hmac.compare_digest(computed_hash, hash_value)
-        print(f"Hashes match: {hashes_match}")
+        if not hmac.compare_digest(computed_hash, hash_value):
+            print("❌ Hash verification failed!")
+            return None
         
-        if not hashes_match:
-            return {
-                "success": False,
-                "error": "Hash mismatch",
-                "debug": {
-                    "bot_token_set": bool(SECRET_KEY and SECRET_KEY != "YOUR_BOT_TOKEN"),
-                    "computed_hash": computed_hash,
-                    "telegram_hash": hash_value,
-                    "bot_token_start": SECRET_KEY[:20] if SECRET_KEY else "NOT SET"
-                }
-            }
+        print("✅ Hash verified!")
         
-        # Extract user_id
-        user_data = json.loads(parsed_data.get("user", "{}"))
-        user_id = str(user_data.get("id"))
-        
-        print(f"✅ Verification successful! User ID: {user_id}")
+        # Parse user data if present
+        user_data = {}
+        if "user" in parsed_data:
+            try:
+                user_data = json.loads(parsed_data["user"])
+            except:
+                pass
         
         return {
-            "success": True,
-            "user_id": user_id,
-            "user_info": user_data,
-            "debug": "Verification successful"
+            "user": user_data,
+            "auth_date": auth_date,
+            "chat_instance": parsed_data.get("chat_instance"),
+            "chat_type": parsed_data.get("chat_type"),
+            "start_param": parsed_data.get("start_param"),
         }
         
     except Exception as e:
         print(f"❌ Exception: {str(e)}")
         import traceback
         traceback.print_exc()
-        return {
-            "success": False,
-            "error": str(e),
-            "debug": traceback.format_exc()
-        }
+        return None

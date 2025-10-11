@@ -438,34 +438,57 @@ async def get_image_details(file_path: str = Body(..., embed=True)):
     
 # ========== USAGE IN YOUR ENDPOINTS ==========
 @app.get("/test-verification")
-async def test_verification(x_init_data: str = Header(None)):
+async def test_verification(authorization: str = Header(None)):
     """
-    Test endpoint with debugging info.
+    Test endpoint that validates Telegram Mini Apps init data.
+    
+    Expected header format:
+    Authorization: tma <initDataRaw>
+    
+    Where <initDataRaw> is the raw init data from Telegram WebApp.
     """
     
-    if not x_init_data:
+    if not authorization:
         raise HTTPException(
             status_code=400,
-            detail="Missing X-Init-Data header"
+            detail="Missing Authorization header"
         )
     
-    print(f"\n{'='*50}")
-    print(f"Received initData (first 100 chars): {x_init_data[:100]}...")
-    print(f"{'='*50}\n")
+    # Parse authorization header
+    parts = authorization.split(" ", 1)
+    if len(parts) != 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Authorization header format. Expected: 'tma <initDataRaw>'"
+        )
     
-    result = verify_telegram_auth_debug(x_init_data)
+    auth_type, auth_data = parts
     
-    if not result["success"]:
+    if auth_type.lower() != "tma":
         raise HTTPException(
             status_code=401,
-            detail=result.get("error", "Verification failed"),
-            # Include debug info in response
+            detail=f"Invalid auth type: {auth_type}. Expected: tma"
         )
+    
+    print(f"\n{'='*80}")
+    print(f"Authorization header received (first 100 chars): {authorization[:100]}...")
+    print(f"{'='*80}\n")
+    
+    # Validate init data
+    init_data = validate_init_data(auth_data, SECRET_KEY, expires_in=3600)
+    
+    if not init_data:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or tampered init data"
+        )
+    
+    user_id = init_data["user"].get("id")
     
     return {
         "success": True,
-        "user_id": result["user_id"],
-        "user_info": result.get("user_info"),
-        "message": "✅ Verification successful!",
-        "debug": result.get("debug")
+        "user_id": user_id,
+        "user_info": init_data["user"],
+        "auth_date": init_data["auth_date"],
+        "message": "✅ Verification successful!"
     }
