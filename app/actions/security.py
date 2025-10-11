@@ -3,8 +3,7 @@ import hmac
 from urllib.parse import unquote, parse_qsl
 import json
 import os
-import datetime
-
+from datetime import datetime
 
 SECRET_KEY = os.getenv("BOT_API")
 
