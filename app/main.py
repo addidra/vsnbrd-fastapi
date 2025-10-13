@@ -440,12 +440,10 @@ async def get_image_details(file_path: str = Body(..., embed=True)):
 @app.get("/test-verification")
 async def test_verification(authorization: str = Header(None)):
     """
-    Test endpoint that validates Telegram Mini Apps init data.
+    Validate Telegram Mini Apps init data from Authorization header.
     
     Expected header format:
     Authorization: tma <initDataRaw>
-    
-    Where <initDataRaw> is the raw init data from Telegram WebApp.
     """
     
     if not authorization:
@@ -475,7 +473,7 @@ async def test_verification(authorization: str = Header(None)):
     print(f"{'='*80}\n")
     
     # Validate init data
-    init_data = validate_init_data(auth_data, BOT_API, expires_in=3600)
+    init_data = validate_init_data(auth_data, BOT_TOKEN, expires_in=3600)
     
     if not init_data:
         raise HTTPException(
@@ -492,4 +490,3 @@ async def test_verification(authorization: str = Header(None)):
         "auth_date": init_data["auth_date"],
         "message": "✅ Verification successful!"
     }
-

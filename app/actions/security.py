@@ -46,17 +46,12 @@ def verify_telegram_auth(init_data: str) -> str | None:
         print(f"Auth error: {e}")
         return None
 
-def validate_init_data(init_data_raw: str, token: str, expires_in: int = 3600) -> dict | None:
+def validate_init_data(init_data_raw: str, bot_token: str, expires_in: int = 3600) -> dict | None:
     """
-    Validate and parse Telegram Mini Apps init data.
+    Validate Telegram Mini Apps init data.
     
-    Args:
-        init_data_raw: Raw init data string (URL-encoded)
-        token: Bot token for verification
-        expires_in: Time window for valid signatures (in seconds)
-    
-    Returns:
-        Parsed init data dict if valid, None otherwise
+    CRITICAL: The secret key must be HMAC-SHA256(bot_token, "WebAppData")
+    NOT HMAC-SHA256("WebAppData", bot_token)
     """
     try:
         # Parse the init data
@@ -80,7 +75,7 @@ def validate_init_data(init_data_raw: str, token: str, expires_in: int = 3600) -
             print(f"❌ Init data expired. Age: {current_time - auth_date}s, Max: {expires_in}s")
             return None
         
-        # Create data check string (must be sorted)
+        # Create data check string (MUST BE SORTED ALPHABETICALLY)
         data_check_string = "\n".join(
             f"{k}={v}" for k, v in sorted(parsed_data.items())
         )
@@ -88,8 +83,15 @@ def validate_init_data(init_data_raw: str, token: str, expires_in: int = 3600) -
         print("\n=== VERIFICATION ===")
         print(f"Data check string:\n{data_check_string}\n")
         
-        # Verify hash using the bot token
-        secret_key = hashlib.sha256(token.encode()).digest()
+        # ⭐ CORRECT: Create secret key from bot token
+        # secret_key = HMAC_SHA256(bot_token, "WebAppData")
+        secret_key = hmac.new(
+            b"WebAppData",
+            bot_token.encode(),
+            hashlib.sha256
+        ).digest()
+        
+        # ⭐ CORRECT: Verify hash using the secret key
         computed_hash = hmac.new(
             secret_key,
             data_check_string.encode(),
@@ -97,7 +99,7 @@ def validate_init_data(init_data_raw: str, token: str, expires_in: int = 3600) -
         ).hexdigest()
         
         print(f"Computed hash: {computed_hash}")
-        print(f"Telegram hash: {hash_value}")
+        print(f"Telegram hash:  {hash_value}")
         print(f"Match: {hmac.compare_digest(computed_hash, hash_value)}")
         
         if not hmac.compare_digest(computed_hash, hash_value):
@@ -109,6 +111,7 @@ def validate_init_data(init_data_raw: str, token: str, expires_in: int = 3600) -
         # Parse user data if present
         user_data = {}
         if "user" in parsed_data:
+            import json
             try:
                 user_data = json.loads(parsed_data["user"])
             except:
