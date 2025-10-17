@@ -110,6 +110,7 @@ def validate_init_data(init_data_raw: str, bot_token: str, expires_in: int = 360
         
         # Parse user data if present
         user_data = {}
+        print(parsed_data["user"])
         if "user" in parsed_data:
             import json
             try:

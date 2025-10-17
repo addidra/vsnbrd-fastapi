@@ -123,7 +123,7 @@ async def handle_new_user(user: dict, chat_id: str):
     )
 
     photos = response.get("result", {}).get("photos", [])
-
+    print(f"Handle New user 👤 User ID: {user_id}")
     if photos and photos[0]:  
         # last element is the highest resolution
         file_id = photos[0][-1]["file_id"]
