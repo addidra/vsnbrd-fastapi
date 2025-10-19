@@ -12,7 +12,8 @@ class UserValidationMiddleware(BaseHTTPMiddleware):
                 raise HTTPException(status_code=400, detail="Invalid Authorization header format. Expected: 'tma <initDataRaw>'")
             
             auth_type, auth_data = parts
-
+            print(f"\n{'='*20} Incoming Request Authorization {'='*20}")
+            print(f"Auth Type: {parts}")
             if not auth_data:
                 raise HTTPException(status_code=400, detail="Authorization data missing.")
                 
