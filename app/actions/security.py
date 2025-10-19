@@ -60,12 +60,12 @@ def validate_init_data(init_data_raw: str, expires_in: int = 3600) -> dict | Non
         # Extract hash and auth_date
         if "hash" not in parsed_data:
             print("❌ Missing hash field")
-            return None
+            return False
         
         if "auth_date" not in parsed_data:
             print("❌ Missing auth_date field")
-            return None
-        
+            return False
+
         hash_value = parsed_data.pop("hash")
         auth_date = int(parsed_data.get("auth_date", 0))
         
@@ -73,7 +73,7 @@ def validate_init_data(init_data_raw: str, expires_in: int = 3600) -> dict | Non
         current_time = int(datetime.now().timestamp())
         if current_time - auth_date > expires_in:
             print(f"❌ Init data expired. Age: {current_time - auth_date}s, Max: {expires_in}s")
-            return None
+            return False
         
         # Create data check string (MUST BE SORTED ALPHABETICALLY)
         data_check_string = "\n".join(
@@ -104,27 +104,11 @@ def validate_init_data(init_data_raw: str, expires_in: int = 3600) -> dict | Non
         
         if not hmac.compare_digest(computed_hash, hash_value):
             print("❌ Hash verification failed!")
-            return None
+            return False
         
         print("✅ Hash verified!")
         
-        # Parse user data if present
-        user_data = {}
-        print(parsed_data["user"])
-        if "user" in parsed_data:
-            import json
-            try:
-                user_data = json.loads(parsed_data["user"])
-            except:
-                pass
-        
-        return {
-            "user": user_data,
-            "auth_date": auth_date,
-            "chat_instance": parsed_data.get("chat_instance"),
-            "chat_type": parsed_data.get("chat_type"),
-            "start_param": parsed_data.get("start_param"),
-        }
+        return True
         
     except Exception as e:
         print(f"❌ Exception: {str(e)}")
