@@ -7,46 +7,46 @@ from datetime import datetime
 
 SECRET_KEY = os.getenv("BOT_API")
 
-def verify_telegram_auth(init_data: str) -> str | None:
-    """
-    Verify Telegram WebApp initData and return user_id.
-    Returns None if verification fails.
-    """
-    try:
-        parsed_data = dict(parse_qsl(unquote(init_data)))
+# def verify_telegram_auth(init_data: str) -> str | None:
+#     """
+#     Verify Telegram WebApp initData and return user_id.
+#     Returns None if verification fails.
+#     """
+#     try:
+#         parsed_data = dict(parse_qsl(unquote(init_data)))
         
-        if "hash" not in parsed_data or "user" not in parsed_data:
-            return None
+#         if "hash" not in parsed_data or "user" not in parsed_data:
+#             return None
         
-        hash_value = parsed_data.pop("hash")
+#         hash_value = parsed_data.pop("hash")
         
-        # Create data check string
-        data_check_string = "\n".join(
-            f"{k}={v}" for k, v in sorted(parsed_data.items())
-        )
+#         # Create data check string
+#         data_check_string = "\n".join(
+#             f"{k}={v}" for k, v in sorted(parsed_data.items())
+#         )
         
-        # Verify hash
-        secret_key = hashlib.sha256(SECRET_KEY.encode()).digest()
-        computed_hash = hmac.new(
-            secret_key,
-            data_check_string.encode(),
-            hashlib.sha256
-        ).hexdigest()
+#         # Verify hash
+#         secret_key = hashlib.sha256(SECRET_KEY.encode()).digest()
+#         computed_hash = hmac.new(
+#             secret_key,
+#             data_check_string.encode(),
+#             hashlib.sha256
+#         ).hexdigest()
         
-        if not hmac.compare_digest(computed_hash, hash_value):
-            return None
+#         if not hmac.compare_digest(computed_hash, hash_value):
+#             return None
         
-        # Extract user_id
-        user_data = json.loads(parsed_data.get("user", "{}"))
-        user_id = str(user_data.get("id"))
+#         # Extract user_id
+#         user_data = json.loads(parsed_data.get("user", "{}"))
+#         user_id = str(user_data.get("id"))
         
-        return user_id if user_id else None
+#         return user_id if user_id else None
         
-    except Exception as e:
-        print(f"Auth error: {e}")
-        return None
+#     except Exception as e:
+#         print(f"Auth error: {e}")
+#         return None
 
-def validate_init_data(init_data_raw: str, bot_token: str, expires_in: int = 3600) -> dict | None:
+def validate_init_data(init_data_raw: str, expires_in: int = 3600) -> dict | None:
     """
     Validate Telegram Mini Apps init data.
     
@@ -87,7 +87,7 @@ def validate_init_data(init_data_raw: str, bot_token: str, expires_in: int = 360
         # secret_key = HMAC_SHA256(bot_token, "WebAppData")
         secret_key = hmac.new(
             b"WebAppData",
-            bot_token.encode(),
+            SECRET_KEY.encode(),
             hashlib.sha256
         ).digest()
         

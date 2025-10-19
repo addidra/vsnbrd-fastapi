@@ -476,7 +476,7 @@ async def test_verification(authorization: str = Header(None)):
     print(f"{'='*80}\n")
     
     # Validate init data
-    init_data = validate_init_data(auth_data, BOT_API, expires_in=3600)
+    init_data = validate_init_data(auth_data, expires_in=3600)
     
     if not init_data:
         raise HTTPException(
