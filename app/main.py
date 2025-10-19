@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import requests, os, base64, logging, asyncio
+from app.actions.middleware import UserValidationMiddleware
 from app.actions.security import verify_telegram_auth, validate_init_data
 from app.actions.telegram import TelegramFilePathFetcher
 from app.dependency import users_collection, posts_collection, tags_collection, boards_collection
@@ -22,6 +23,7 @@ router = APIRouter()
 
 app.add_middleware(
     CORSMiddleware,
+    UserValidationMiddleware,
     allow_origins=["https://vsnbrd-addidras-projects.vercel.app","https://vsnbrd.vercel.app","https://yearly-civil-starling.ngrok-free.app"],
     allow_credentials=True,
     allow_methods=["*"],
