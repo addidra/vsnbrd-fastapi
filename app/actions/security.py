@@ -7,64 +7,34 @@ from datetime import datetime
 
 SECRET_KEY = os.getenv("BOT_API")
 
-# def verify_telegram_auth(init_data: str) -> str | None:
-#     """
-#     Verify Telegram WebApp initData and return user_id.
-#     Returns None if verification fails.
-#     """
-#     try:
-#         parsed_data = dict(parse_qsl(unquote(init_data)))
-        
-#         if "hash" not in parsed_data or "user" not in parsed_data:
-#             return None
-        
-#         hash_value = parsed_data.pop("hash")
-        
-#         # Create data check string
-#         data_check_string = "\n".join(
-#             f"{k}={v}" for k, v in sorted(parsed_data.items())
-#         )
-        
-#         # Verify hash
-#         secret_key = hashlib.sha256(SECRET_KEY.encode()).digest()
-#         computed_hash = hmac.new(
-#             secret_key,
-#             data_check_string.encode(),
-#             hashlib.sha256
-#         ).hexdigest()
-        
-#         if not hmac.compare_digest(computed_hash, hash_value):
-#             return None
-        
-#         # Extract user_id
-#         user_data = json.loads(parsed_data.get("user", "{}"))
-#         user_id = str(user_data.get("id"))
-        
-#         return user_id if user_id else None
-        
-#     except Exception as e:
-#         print(f"Auth error: {e}")
-#         return None
-
 def validate_init_data(init_data_raw: str, expires_in: int = 3600) -> dict | None:
     """
     Validate Telegram Mini Apps init data.
     
-    CRITICAL: The secret key must be HMAC-SHA256(bot_token, "WebAppData")
-    NOT HMAC-SHA256("WebAppData", bot_token)
+    Returns dict with user data if valid, None if invalid.
     """
     try:
+        # ❌ Check if empty
+        if not init_data_raw or init_data_raw.strip() == "":
+            print("❌ Init data is empty")
+            return None
+        
         # Parse the init data
         parsed_data = dict(parse_qsl(unquote(init_data_raw)))
+        
+        # ❌ Check if parsed data is empty
+        if not parsed_data:
+            print("❌ Parsed data is empty")
+            return None
         
         # Extract hash and auth_date
         if "hash" not in parsed_data:
             print("❌ Missing hash field")
-            return False
+            return None
         
         if "auth_date" not in parsed_data:
             print("❌ Missing auth_date field")
-            return False
+            return None
 
         hash_value = parsed_data.pop("hash")
         auth_date = int(parsed_data.get("auth_date", 0))
@@ -73,7 +43,7 @@ def validate_init_data(init_data_raw: str, expires_in: int = 3600) -> dict | Non
         current_time = int(datetime.now().timestamp())
         if current_time - auth_date > expires_in:
             print(f"❌ Init data expired. Age: {current_time - auth_date}s, Max: {expires_in}s")
-            return False
+            return None
         
         # Create data check string (MUST BE SORTED ALPHABETICALLY)
         data_check_string = "\n".join(
@@ -83,15 +53,14 @@ def validate_init_data(init_data_raw: str, expires_in: int = 3600) -> dict | Non
         print("\n=== VERIFICATION ===")
         print(f"Data check string:\n{data_check_string}\n")
         
-        # ⭐ CORRECT: Create secret key from bot token
-        # secret_key = HMAC_SHA256(bot_token, "WebAppData")
+        # Create secret key from bot token
         secret_key = hmac.new(
             b"WebAppData",
             SECRET_KEY.encode(),
             hashlib.sha256
         ).digest()
         
-        # ⭐ CORRECT: Verify hash using the secret key
+        # Verify hash using the secret key
         computed_hash = hmac.new(
             secret_key,
             data_check_string.encode(),
@@ -104,11 +73,27 @@ def validate_init_data(init_data_raw: str, expires_in: int = 3600) -> dict | Non
         
         if not hmac.compare_digest(computed_hash, hash_value):
             print("❌ Hash verification failed!")
-            return False
+            return None
         
         print("✅ Hash verified!")
         
-        return True
+        # Parse user data if present
+        user_data = {}
+        if "user" in parsed_data:
+            try:
+                user_data = json.loads(parsed_data["user"])
+            except Exception as e:
+                print(f"❌ Failed to parse user data: {e}")
+                return None
+        
+        # Return validated data
+        return {
+            "user": user_data,
+            "auth_date": auth_date,
+            "chat_instance": parsed_data.get("chat_instance"),
+            "chat_type": parsed_data.get("chat_type"),
+            "start_param": parsed_data.get("start_param"),
+        }
         
     except Exception as e:
         print(f"❌ Exception: {str(e)}")
