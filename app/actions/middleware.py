@@ -4,7 +4,7 @@ from starlette.responses import JSONResponse
 from app.actions.security import validate_init_data
 import traceback
 
-PUBLIC_ROUTES = ["/docs", "/openapi.json", "/redoc", "/health"]
+PUBLIC_ROUTES = ["/getImage","/","/docs", "/openapi.json", "/redoc", "/health"]
 
 class UserValidationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint):
