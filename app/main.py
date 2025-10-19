@@ -20,17 +20,22 @@ app = FastAPI()
 router = APIRouter()
 
 # app.include_router(router)
-
+# ⭐ CRITICAL: Add CORS middleware BEFORE other middlewares
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://vsnbrd-addidras-projects.vercel.app","https://vsnbrd.vercel.app","https://yearly-civil-starling.ngrok-free.app"],
+    allow_origins=[
+        "https://yearly-civil-starling.ngrok-free.app",  # Your ngrok URL
+        "https://vsnbrd-backend.onrender.com",  # Your backend
+        "http://localhost:3000",  # Local development
+        "http://localhost:5173",  # Vite default
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers including Authorization
 )
 
+# Add authentication middleware AFTER CORS
 app.add_middleware(UserValidationMiddleware)
-
 @app.get("/")
 async def hello():
     print("Render is working")
