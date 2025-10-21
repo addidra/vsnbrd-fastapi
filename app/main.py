@@ -298,20 +298,55 @@ async def process_update(update: dict):
 
 @app.delete("/deletePost")
 async def delete_post(file_path: str = Query(...)):
+    """
+    Delete a post and remove its reference from all boards.
+    Maintains data consistency automatically.
+    """
     try:
+        # 1. Fetch the post
         post_res = await fetch_post_from_file_path(file_path)
         if not post_res.get("ok"):
             return {"ok": False, "message": "Post Not Found"}
 
         post = post_res.get("post")
-        print(f"Deleting post: {post['_id']}", flush=True)
-        # Delete associated tags if no other posts reference them
-        delete_res = await posts_collection.delete_one({"_id": post.get('_id')})
+        post_id = post.get('_id')
+        
+        print(f"Deleting post: {post_id}", flush=True)
+        
+        # 2. Remove post_id from all boards that reference it
+        # This maintains consistency automatically
+        await boards_collection.update_many(
+            {"posts": post_id},  # Find all boards with this post
+            {"$pull": {"posts": post_id}}  # Remove post_id from posts array
+        )
+        
+        print(f"Removed post {post_id} from all boards", flush=True)
+        
+        # 3. Delete the post document
+        delete_res = await posts_collection.delete_one({"_id": post_id})
+        
         if delete_res.deleted_count == 0:
             return {"ok": False, "message": "Failed to delete post"}
-        return {"ok": True, "message": "Post deleted successfully"}
+        
+        # 4. Optional: Delete associated tags if no other posts reference them
+        # if post.get('tag_names'):
+        #     for tag_name in post.get('tag_names', []):
+        #         # Check if any other post uses this tag
+        #         other_posts = await posts_collection.count_documents({"tag_names": tag_name})
+        #         if other_posts == 0:
+        #             await tags_collection.delete_one({"name": tag_name})
+        
+        return {
+            "ok": True, 
+            "message": "Post deleted successfully",
+            "deleted_post_id": str(post_id)
+        }
+        
     except Exception as e:
-        return {"ok": False, "message":f"Error: {str(e)}"}
+        print(f"Error deleting post: {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "message": f"Error: {str(e)}"}
     
 @app.delete("/removeTagFromPost")
 # async def remove_tag(name: str = Body(...), file_path: str = Body(...), telegram_data: dict = Body(...)):
