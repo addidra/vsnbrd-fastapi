@@ -12,6 +12,8 @@ def validate_init_data(init_data_raw: str, expires_in: int = 3600) -> dict | Non
     Validate Telegram Mini Apps init data.
     
     Returns dict with user data if valid, None if invalid.
+    
+    N_update: The endpoint should get the user_id from authentication rather than data passed in body
     """
     try:
         # ❌ Check if empty
