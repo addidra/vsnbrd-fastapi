@@ -412,9 +412,14 @@ async def create_board(name: str = Body(..., embed=True), user_id: str = Body(..
         return {"ok": False, "message": f"Error: {str(e)}"}
     
 @app.get("/getUserBoards")
-async def get_user_boards(user_id: str = Query(...)):
+async def get_user_boards(request: Request):
     try:
+        user_id = str(request.state.user["user"].get("id"))
+        user_doc = await users_collection.find_one({"user_id": user_id}, {"membership": 1, "_id": 0})
+        if not user_doc["membership"].get("expires_at") or user_doc["membership"].get("expires_at") < datetime.now():
+            return {"ok": False, "isFree": True, "message": "Membership expired or not found"}
         user_boards = await boards_collection.find({"user_id": user_id}).to_list(length=None)
+        print(user_boards)
         preview_imgs = []
         for board in user_boards:
             for post_id in board.get("posts", []):
@@ -426,8 +431,6 @@ async def get_user_boards(user_id: str = Query(...)):
             board["preview_images"] = preview_imgs
             board["posts"] = [str(post_id) for post_id in board["posts"]]
             preview_imgs = []
-        if not user_boards:
-            return []  # return empty list if no boards found
         
         return [serialize_doc(board) for board in user_boards]
     

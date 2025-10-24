@@ -4,6 +4,9 @@ from urllib.parse import unquote, parse_qsl
 import json
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 SECRET_KEY = os.getenv("BOT_API")
 # test
