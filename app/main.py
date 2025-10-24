@@ -11,7 +11,6 @@ from app.dependency import users_collection, posts_collection, tags_collection, 
 from app.actions.telegram_bot import verify_image_path, remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
 from urllib.parse import unquote, parse_qsl
 from app.schemas.users import PlanType, PreviousPlan, Membership
-from app.test import show_var_auto
 import json
 
 load_dotenv()
