@@ -5,7 +5,8 @@ import json
 import os
 from datetime import datetime
 
-SECRET_KEY = os.getenv("BOT_API")
+# SECRET_KEY = os.getenv("BOT_API")
+# test
 
 def validate_init_data(init_data_raw: str, expires_in: int = 3600) -> dict | None:
     """

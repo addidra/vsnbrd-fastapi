@@ -1,4 +1,5 @@
-from fastapi import Depends, FastAPI, Query, Response, APIRouter,HTTPException, Body, Header
+from datetime import datetime, timedelta
+from fastapi import Depends, FastAPI, Query, Response, APIRouter,HTTPException, Body, Header, Request
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -9,7 +10,10 @@ from app.actions.telegram import TelegramFilePathFetcher
 from app.dependency import users_collection, posts_collection, tags_collection, boards_collection
 from app.actions.telegram_bot import verify_image_path, remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
 from urllib.parse import unquote, parse_qsl
+from app.schemas.users import PlanType, PreviousPlan, Membership
+from app.test import show_var_auto
 import json
+
 load_dotenv()
 
 TELE_FILE_URL = os.getenv("TELE_FILE_URL")
@@ -165,14 +169,18 @@ from bson import ObjectId
 @app.post("/getPostFromBoard")
 async def get_post_from_board(board_id: str = Body(..., embed=True)):
     try:
-        board = await boards_collection.find_one({"_id": ObjectId(board_id)}, {"posts": 1, "_id": 0, "name": 1})
-        post_ids = board.get("posts", [])
-        user_posts = await posts_collection.find({"_id": {"$in": post_ids}}).to_list(length=None)
+        board = await boards_collection.find_one({"_id": ObjectId(board_id)}, {"posts": 1, "user_id": 1, "_id": 0, "name": 1})
+        user_doc = await users_collection.find_one({"user_id": board["user_id"]}, {"membership": 1, "_id": 0})
+        if user_doc["membership"].get("expires_at") and user_doc["membership"].get("expires_at") > datetime.now():
+            post_ids = board.get("posts", [])
+            user_posts = await posts_collection.find({"_id": {"$in": post_ids}}).to_list(length=None)
 
-        if not user_posts:
-            return {"ok":False, "message": "No posts found for this user."}
+            if not user_posts:
+                return {"ok":False, "message": "No posts found for this user."}
 
-        return {"posts":[serialize_doc(post) for post in user_posts], "board": board["name"]}
+            return {"posts":[serialize_doc(post) for post in user_posts], "board": board["name"]}
+        else:
+            return {"ok":True, "isFree": True, "message": "Board access expired. Please renew your membership to access boards."}
 
     except Exception as e:
         return {"ok": False, "message": str(e)}
@@ -284,11 +292,17 @@ async def process_update(update: dict):
             base64_bytes = base64.b64encode(response.content).decode("utf-8")
             mime_type = fetch_mime_type(str(base64_bytes),file_details.high.file_path)
             await send_msg(text=f"Read: {mime_type}", chat_id=chat_id, error=False)
-            tags_list = await generate_tags(mime_type=mime_type, data=base64_bytes, user_id=user_id)
-            done = await save_tags_and_update_post(tags_list, user_id, post_id)
-            if done:
-                await send_msg(text=f"Tags {tags_list} added to post {post_id}", chat_id=chat_id, error=False)
-
+            post_count = await posts_collection.count_documents({"user_id":user_id})
+            user_doc = await users_collection.find_one({"user_id": user_id})
+            membership = user_doc.get("membership", {})
+            # Check if the user has an active paid plan or is within free period limit
+            if post_count <= 50 or (membership.get("expires_at") and membership.get("expires_at") > datetime.now()):
+                tags_list = await generate_tags(mime_type=mime_type, data=base64_bytes, user_id=user_id)
+                done = await save_tags_and_update_post(tags_list, user_id, post_id)
+                if done:
+                    await send_msg(text=f"Tags {tags_list} added to post {post_id}", chat_id=chat_id, error=False)
+            elif post_count % 10 == 0: # notify every 10 posts after 50
+                await send_msg(text="VSNBRD only generates tags for first 50 posts. Upgrade plan for more!", chat_id=chat_id, error=False)
         else:
             await send_msg(text="VSNBRD only supports Compressed Image files at the moment", chat_id=chat_id, error=False)
             
@@ -407,6 +421,7 @@ async def get_user_boards(user_id: str = Query(...)):
             for post_id in board.get("posts", []):
                 if len(preview_imgs) >= 1:
                     break
+                print(post_id)
                 post = await posts_collection.find_one({"_id": post_id})
                 preview_imgs.append(post["file_details"].get("medium").get("file_path") or post["file_details"].get("high").get("file_path"))
             board["preview_images"] = preview_imgs
@@ -533,3 +548,64 @@ async def test_verification(authorization: str = Header(None)):
         "auth_date": init_data["auth_date"],
         "message": "✅ Verification successful!"
     }
+
+@app.post("/upgradePlan")
+async def upgrade_plan(request: Request, plan_type: PlanType = Body(..., embed=True)):
+    """
+    Upgrade user membership plan.
+    Expects JSON body with 'user_id', 'plan_type', 'duration_days'.
+    """
+    try:
+        user_id = request.state.user["user"].get("id")
+        user_doc = await users_collection.find_one({"user_id": str(user_id)})
+        if not user_doc:
+            return {"ok": False, "message": "User not found"}
+
+        current_membership = user_doc.get("membership", {})
+        
+        # Get current start date and ensure it's a datetime object
+        current_start_date = current_membership.get("current_start_date")
+        if isinstance(current_start_date, str):
+            current_start_date = datetime.fromisoformat(current_start_date.replace('Z', '+00:00'))
+        elif current_start_date is None:
+            current_start_date = datetime.now()
+        
+        # Get current end date (expires_at) and ensure it's a datetime object
+        current_end_date = current_membership.get("expires_at")
+        if isinstance(current_end_date, str):
+            current_end_date = datetime.fromisoformat(current_end_date.replace('Z', '+00:00'))
+        
+        # Calculate new end date
+        end_date = None
+        if plan_type == PlanType.quarterly:
+            end_date = datetime.now() + timedelta(days=90)
+        elif plan_type == PlanType.yearly:
+            end_date = datetime.now() + timedelta(days=365)
+        
+        # Only create previous_plan if there was an existing plan
+        history = current_membership.get("history", [])
+        if current_membership.get("plan"):  # Only add to history if there was a previous plan
+            previous_plan = PreviousPlan(
+                plan=current_membership.get("plan"),
+                start_date=current_start_date,
+                end_date=current_end_date  # Use the actual expiry date, not calculated
+            )
+            history = history + [previous_plan.model_dump()]
+        
+        updated_membership = Membership(
+            plan=plan_type,
+            expires_at=end_date,
+            current_start_date=datetime.now(),
+            history=history
+        )
+
+        updated_user = await users_collection.update_one(
+            {"user_id": str(user_id)},
+            {"$set": {"membership": updated_membership.model_dump()}}
+        )
+        
+        print(updated_user.matched_count, updated_user.modified_count)
+        return {"ok": True, "message": "Membership upgraded successfully"}
+
+    except Exception as e:
+        return {"ok": False, "message": f"Error: {str(e)}"}

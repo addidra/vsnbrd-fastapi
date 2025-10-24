@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import List, Any
 from bson import ObjectId
+from enum import Enum
 
 
 class MongoBaseModel(BaseModel):
@@ -18,6 +19,22 @@ class MongoBaseModel(BaseModel):
         except Exception:
             raise ValueError(f"Invalid ObjectId: {value}")
 
+class PlanType(str, Enum):
+    free = "free"
+    quarterly = "quarterly"
+    yearly = "yearly"
+
+class PreviousPlan(MongoBaseModel):
+    plan: PlanType
+    start_date: datetime
+    end_date: datetime
+
+class Membership(MongoBaseModel):
+    plan: PlanType = PlanType.free
+    expires_at: datetime | None = None
+    current_start_date: datetime | None = None
+    history: list[PreviousPlan] = Field(default_factory=list)
+
 class User(MongoBaseModel):
     user_id: str
     first_name: str
@@ -28,5 +45,5 @@ class User(MongoBaseModel):
     profile_image_path: str | None = None
     posts: List[ObjectId] = []
     created_at: datetime = Field(default_factory=lambda: datetime.now())
-    
+    membership: Membership = Field(default_factory=Membership)
     
