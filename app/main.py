@@ -441,9 +441,6 @@ async def create_board(name: str = Body(..., embed=True), user_id: str = Body(..
 async def get_user_boards(request: Request):
     try:
         user_id = str(request.state.user["user"].get("id"))
-        user_doc = await users_collection.find_one({"user_id": user_id}, {"membership": 1, "_id": 0})
-        if not user_doc["membership"].get("expires_at") or user_doc["membership"].get("expires_at") < datetime.now():
-            return {"ok": False, "isFree": True, "message": "Membership expired or not found"}
         user_boards = await boards_collection.find({"user_id": user_id}).to_list(length=None)
         print(user_boards)
         preview_imgs = []
