@@ -263,6 +263,30 @@ async def process_update(update: dict):
         message = update.get("message")
         logging.info(f"Processing message: {update}")
         print(f"Processing message: {update}", flush=True)
+        
+        
+        # Handle successful payment
+        if "pre_checkout_query" in update:
+            query_id = update["pre_checkout_query"]["id"]
+            # Answer pre-checkout
+            res = await run_tele_api(
+                endpoint="answerPreCheckoutQuery", 
+                params={"pre_checkout_query_id": query_id, "ok": True},
+                method="post"
+            ) 
+            print(f"Pre-checkout answered: {res}", flush=True)
+        
+        if "successful_payment" in message:
+            payment = message["successful_payment"]
+            
+            # Update MongoDB
+            await invoices_collection.update_one(
+                {"user_id": user_id, "status": "pending"},
+                {"$set": {"status": "completed", "telegram_payment_charge_id": payment["telegram_payment_charge_id"]}}
+            )
+            await send_msg(text="Payment successful! Your membership has been activated.", chat_id=chat_id, error=False)
+        
+        
         if not message:
             return
 
@@ -275,31 +299,6 @@ async def process_update(update: dict):
         # Handle /start command
         if message.get("text") == "/start":
             await handle_new_user(user, chat_id)
-
-        # Handle successful payment
-        if "pre_checkout_query" in update:
-            query_id = update["pre_checkout_query"]["id"]
-            # Answer pre-checkout
-            await run_tele_api(
-                endpoint="answerPreCheckoutQuery", 
-                params={"pre_checkout_query_id": query_id, "ok": True},
-                method="post"
-            )
-        
-        if "successful_payment" in message:
-            payment = message["successful_payment"]
-            
-            # Update MongoDB
-            await invoices_collection.update_one(
-                {"user_id": user_id, "status": "pending"},
-                {"$set": {"status": "completed", "telegram_payment_charge_id": payment["telegram_payment_charge_id"]}}
-            )
-            
-            # Update user data
-            # await users_collection.update_one(
-            #     {"user_id": user_id},
-            #     {"$inc": {"stars_spent": payment["total_amount"]}}
-            # )
         
         # Handle photo messages
         elif message.get("photo"):
