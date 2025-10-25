@@ -670,6 +670,8 @@ async def check_membership(request: Request):
         return {"ok": False, "message": "User not found"}
 
     current_membership = user_doc.get("membership", {})
+    if not current_membership:
+        return {"ok": True, "isFree": True, "message": "No membership found"}
     isPaid = current_membership.get("expires_at") and current_membership.get("expires_at") > datetime.now()
     if not isPaid:
         return {"ok": True, "isFree": True, "message": "No active membership found"}
