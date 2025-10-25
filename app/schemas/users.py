@@ -43,7 +43,7 @@ class PaymentRecord(BaseModel):
     payment_date: datetime = Field(default_factory=lambda: datetime.now())
     plan_type: PlanType
     title: str
-    telegram_payment_charge_id: str = Optional(str)
+    telegram_payment_charge_id: Optional[str] = None 
 
 class User(MongoBaseModel):
     user_id: str
