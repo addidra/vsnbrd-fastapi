@@ -655,7 +655,7 @@ async def create_invoice(request: Request, invoice: InvoiceRequest):
     invoice_link = response["result"]
 
     invoice_model = PaymentRecord(user_id=user_id,invoice_link=invoice_link,amount=invoice.amount,status="pending",plan_type=invoice.plan_type,title=invoice.title)
-    await invoices_collection.insert_one(invoice_model.model_dump)
+    await invoices_collection.insert_one(invoice_model.model_dump())
 
     return {"invoice_link": invoice_link}
 
