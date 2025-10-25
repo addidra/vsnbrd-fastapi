@@ -58,7 +58,6 @@ class User(MongoBaseModel):
     membership: Membership = Field(default_factory=Membership)
 
 class InvoiceRequest(BaseModel):
-    user_id: str
     title: str
     description: str
     amount: int
