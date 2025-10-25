@@ -20,7 +20,6 @@ class MongoBaseModel(BaseModel):
             raise ValueError(f"Invalid ObjectId: {value}")
 
 class PlanType(str, Enum):
-    free = "free"
     quarterly = "quarterly"
     yearly = "yearly"
 

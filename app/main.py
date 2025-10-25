@@ -659,6 +659,30 @@ async def create_invoice(request: Request, invoice: InvoiceRequest):
 
     return {"invoice_link": invoice_link}
 
+@app.post("/test-invoice")
+async def create_invoice(request: Request, invoice: InvoiceRequest):
+    # Create invoice link
+    user_id = str(request.state.user["user"].get("id"))
+    payload = {
+        "title": invoice.title,
+        "description": invoice.description,
+        "payload": f"user_{user_id}_10",
+        "currency": "XTR",  # Telegram Stars
+        "prices": [{"label": invoice.title, "amount": 10}]
+    }
+    
+    response = await run_tele_api(endpoint="createInvoiceLink", params=payload, method="post")
+    
+    if not response.get("ok"):
+        raise HTTPException(400, "Failed to create invoice")
+    
+    invoice_link = response["result"]
+
+    invoice_model = PaymentRecord(user_id=user_id,invoice_link=invoice_link,amount=invoice.amount,status="pending",plan_type=invoice.plan_type,title=invoice.title)
+    await invoices_collection.insert_one(invoice_model.model_dump())
+
+    return {"invoice_link": invoice_link}
+
 @app.get("/check-membership")
 async def check_membership(request: Request):
     user_id = request.state.user["user"].get("id")
