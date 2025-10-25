@@ -22,6 +22,7 @@ try:
     posts_collection = db.posts
     tags_collection = db.tags
     boards_collection = db.boards
+    invoices_collection = db.invoices
     print("MongoDB connection successful")
 except Exception as e:
     print(f"Error connecting to MongoDB: {e}")

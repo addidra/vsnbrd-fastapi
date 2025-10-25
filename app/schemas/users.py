@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import List, Any
+from typing import List, Any, Optional
 from bson import ObjectId
 from enum import Enum
 
@@ -35,6 +35,16 @@ class Membership(MongoBaseModel):
     current_start_date: datetime | None = None
     history: list[PreviousPlan] = Field(default_factory=list)
 
+class PaymentRecord(BaseModel):
+    user_id: str
+    invoice_link: str
+    amount: int
+    status: str
+    payment_date: datetime = Field(default_factory=lambda: datetime.now())
+    plan_type: PlanType
+    title: str
+    telegram_payment_charge_id: str = Optional(str)
+
 class User(MongoBaseModel):
     user_id: str
     first_name: str
@@ -46,4 +56,10 @@ class User(MongoBaseModel):
     posts: List[ObjectId] = []
     created_at: datetime = Field(default_factory=lambda: datetime.now())
     membership: Membership = Field(default_factory=Membership)
-    
+
+class InvoiceRequest(BaseModel):
+    user_id: str
+    title: str
+    description: str
+    amount: int
+    plan_type: PlanType

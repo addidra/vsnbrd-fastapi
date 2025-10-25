@@ -7,11 +7,12 @@ import requests, os, base64, logging, asyncio
 from app.actions.middleware import UserValidationMiddleware
 from app.actions.security import validate_init_data
 from app.actions.telegram import TelegramFilePathFetcher
-from app.dependency import users_collection, posts_collection, tags_collection, boards_collection
-from app.actions.telegram_bot import verify_image_path, remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
+from app.dependency import invoices_collection, users_collection, posts_collection, tags_collection, boards_collection
+from app.actions.telegram_bot import run_tele_api, verify_image_path, remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
 from urllib.parse import unquote, parse_qsl
-from app.schemas.users import PlanType, PreviousPlan, Membership
+from app.schemas.users import PaymentRecord, PlanType, PreviousPlan, Membership, InvoiceRequest
 import json
+
 
 load_dotenv()
 
@@ -275,6 +276,31 @@ async def process_update(update: dict):
         if message.get("text") == "/start":
             await handle_new_user(user, chat_id)
 
+        # Handle successful payment
+        if "pre_checkout_query" in update:
+            query_id = update["pre_checkout_query"]["id"]
+            # Answer pre-checkout
+            await run_tele_api(
+                endpoint="answerPreCheckoutQuery", 
+                params={"pre_checkout_query_id": query_id, "ok": True},
+                method="post"
+            )
+        
+        if "successful_payment" in message:
+            payment = message["successful_payment"]
+            
+            # Update MongoDB
+            await invoices_collection.update_one(
+                {"user_id": user_id, "status": "pending"},
+                {"$set": {"status": "completed", "telegram_payment_charge_id": payment["telegram_payment_charge_id"]}}
+            )
+            
+            # Update user data
+            # await users_collection.update_one(
+            #     {"user_id": user_id},
+            #     {"$inc": {"stars_spent": payment["total_amount"]}}
+            # )
+        
         # Handle photo messages
         elif message.get("photo"):
             message_id = str(message.get("message_id"))
@@ -611,3 +637,41 @@ async def upgrade_plan(request: Request, plan_type: PlanType = Body(..., embed=T
 
     except Exception as e:
         return {"ok": False, "message": f"Error: {str(e)}"}
+
+@app.post("/create-invoice")
+async def create_invoice(request: Request, invoice: InvoiceRequest):
+    # Create invoice link
+    user_id = request.state.user["user"].get("id")
+    payload = {
+        "title": invoice.title,
+        "description": invoice.description,
+        "payload": f"user_{user_id}_{invoice.amount}",
+        "currency": "XTR",  # Telegram Stars
+        "prices": [{"label": invoice.title, "amount": invoice.amount}]
+    }
+    
+    response = await run_tele_api(endpoint="createInvoiceLink", params=payload, method="post")
+    
+    if not response.get("ok"):
+        raise HTTPException(400, "Failed to create invoice")
+    
+    invoice_link = response["result"]
+
+    invoice_model = PaymentRecord(user_id=user_id,invoice_link=invoice_link,amount=invoice.amount,status="pending",plan_type=invoice.plan_type,title=invoice.title)
+    await invoices_collection.insert_one(invoice_model.model_dump)
+
+    return {"invoice_link": invoice_link}
+
+@app.post("/check-membership")
+async def check_membership(request: Request):
+    user_id = request.state.user["user"].get("id")
+    user_doc = await users_collection.find_one({"user_id": str(user_id)})
+    if not user_doc:
+        return {"ok": False, "message": "User not found"}
+
+    current_membership = user_doc.get("membership", {})
+    isPaid = current_membership.get("expires_at") and current_membership.get("expires_at") > datetime.now()
+    if not isPaid:
+        return {"ok": True, "isFree": True, "message": "No active membership found"}
+
+    return {"ok": True, "membership": current_membership}
