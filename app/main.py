@@ -638,7 +638,7 @@ async def upgrade_plan(request: Request, plan_type: PlanType = Body(..., embed=T
 @app.post("/create-invoice")
 async def create_invoice(request: Request, invoice: InvoiceRequest):
     # Create invoice link
-    user_id = request.state.user["user"].get("id")
+    user_id = str(request.state.user["user"].get("id"))
     payload = {
         "title": invoice.title,
         "description": invoice.description,
