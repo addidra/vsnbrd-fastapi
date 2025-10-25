@@ -276,6 +276,9 @@ async def process_update(update: dict):
             ) 
             print(f"Pre-checkout answered: {res}", flush=True)
         
+        if not message:
+            return
+
         if "successful_payment" in message:
             payment = message["successful_payment"]
             
@@ -287,9 +290,6 @@ async def process_update(update: dict):
             await send_msg(text="Payment successful! Your membership has been activated.", chat_id=chat_id, error=False)
         
         
-        if not message:
-            return
-
         user = message.get("from", {})
         if user.get("is_bot"):
             return
