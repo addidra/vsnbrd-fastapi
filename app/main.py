@@ -662,7 +662,7 @@ async def create_invoice(request: Request, invoice: InvoiceRequest):
 
     return {"invoice_link": invoice_link}
 
-@app.post("/check-membership")
+@app.get("/check-membership")
 async def check_membership(request: Request):
     user_id = request.state.user["user"].get("id")
     user_doc = await users_collection.find_one({"user_id": str(user_id)})
