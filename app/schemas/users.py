@@ -20,6 +20,7 @@ class MongoBaseModel(BaseModel):
             raise ValueError(f"Invalid ObjectId: {value}")
 
 class PlanType(str, Enum):
+    free = "free"
     quarterly = "quarterly"
     yearly = "yearly"
 
@@ -29,7 +30,7 @@ class PreviousPlan(MongoBaseModel):
     end_date: datetime
 
 class Membership(MongoBaseModel):
-    plan: PlanType = PlanType.free
+    plan: PlanType = Field(default_factory=PlanType.free)
     expires_at: datetime | None = None
     current_start_date: datetime | None = None
     history: list[PreviousPlan] = Field(default_factory=list)
