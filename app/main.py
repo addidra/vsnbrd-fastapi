@@ -8,7 +8,7 @@ from app.actions.middleware import UserValidationMiddleware
 from app.actions.security import validate_init_data
 from app.actions.telegram import TelegramFilePathFetcher
 from app.dependency import invoices_collection, users_collection, posts_collection, tags_collection, boards_collection
-from app.actions.telegram_bot import run_tele_api, verify_image_path, remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
+from app.actions.telegram_bot import upgrade_plan, run_tele_api, verify_image_path, remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
 from urllib.parse import unquote, parse_qsl
 from app.schemas.users import PaymentRecord, PlanType, PreviousPlan, Membership, InvoiceRequest
 import json
@@ -279,23 +279,28 @@ async def process_update(update: dict):
         if not message:
             return
 
+        user = message.get("from", {})
+        if user.get("is_bot"):
+            return
+        user_id = str(user.get("id"))
+        chat_id = str(message.get("chat", {}).get("id"))
+        
         if "successful_payment" in message:
             payment = message["successful_payment"]
+            latest_pending_invoice = await invoices_collection.find_one(
+                {"user_id": user_id, "status": "pending"},
+                sort=[("payment_date", -1)]
+            )
             
+            await upgrade_plan(user_id=user_id, plan_type=latest_pending_invoice["plan_type"])
             # Update MongoDB
             await invoices_collection.update_one(
                 {"user_id": user_id, "status": "pending"},
                 {"$set": {"status": "completed", "telegram_payment_charge_id": payment["telegram_payment_charge_id"]}}
             )
             await send_msg(text="Payment successful! Your membership has been activated.", chat_id=chat_id, error=False)
-        
-        
-        user = message.get("from", {})
-        if user.get("is_bot"):
             return
-        user_id = str(user.get("id"))
-        chat_id = str(message.get("chat", {}).get("id"))
-
+        
         # Handle /start command
         if message.get("text") == "/start":
             await handle_new_user(user, chat_id)
@@ -572,67 +577,6 @@ async def test_verification(authorization: str = Header(None)):
         "auth_date": init_data["auth_date"],
         "message": "✅ Verification successful!"
     }
-
-@app.post("/upgradePlan")
-async def upgrade_plan(request: Request, plan_type: PlanType = Body(..., embed=True)):
-    """
-    Upgrade user membership plan.
-    Expects JSON body with 'user_id', 'plan_type', 'duration_days'.
-    """
-    try:
-        user_id = request.state.user["user"].get("id")
-        user_doc = await users_collection.find_one({"user_id": str(user_id)})
-        if not user_doc:
-            return {"ok": False, "message": "User not found"}
-
-        current_membership = user_doc.get("membership", {})
-        
-        # Get current start date and ensure it's a datetime object
-        current_start_date = current_membership.get("current_start_date")
-        if isinstance(current_start_date, str):
-            current_start_date = datetime.fromisoformat(current_start_date.replace('Z', '+00:00'))
-        elif current_start_date is None:
-            current_start_date = datetime.now()
-        
-        # Get current end date (expires_at) and ensure it's a datetime object
-        current_end_date = current_membership.get("expires_at")
-        if isinstance(current_end_date, str):
-            current_end_date = datetime.fromisoformat(current_end_date.replace('Z', '+00:00'))
-        
-        # Calculate new end date
-        end_date = None
-        if plan_type == PlanType.quarterly:
-            end_date = datetime.now() + timedelta(days=90)
-        elif plan_type == PlanType.yearly:
-            end_date = datetime.now() + timedelta(days=365)
-        
-        # Only create previous_plan if there was an existing plan
-        history = current_membership.get("history", [])
-        if current_membership.get("plan"):  # Only add to history if there was a previous plan
-            previous_plan = PreviousPlan(
-                plan=current_membership.get("plan"),
-                start_date=current_start_date,
-                end_date=current_end_date  # Use the actual expiry date, not calculated
-            )
-            history = history + [previous_plan.model_dump()]
-        
-        updated_membership = Membership(
-            plan=plan_type,
-            expires_at=end_date,
-            current_start_date=datetime.now(),
-            history=history
-        )
-
-        updated_user = await users_collection.update_one(
-            {"user_id": str(user_id)},
-            {"$set": {"membership": updated_membership.model_dump()}}
-        )
-        
-        print(updated_user.matched_count, updated_user.modified_count)
-        return {"ok": True, "message": "Membership upgraded successfully"}
-
-    except Exception as e:
-        return {"ok": False, "message": f"Error: {str(e)}"}
 
 @app.post("/create-invoice")
 async def create_invoice(request: Request, invoice: InvoiceRequest):

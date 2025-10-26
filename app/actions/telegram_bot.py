@@ -1,14 +1,14 @@
 from telegram import Bot
 from dotenv import load_dotenv
 from app.dependency import users_collection, posts_collection,tags_collection, client, mongoClient
-from app.schemas.users import User
+from app.schemas.users import User, Membership, PreviousPlan, PlanType
 from app.schemas.posts import Post, FILE_TYPE, ResolutionDetails, FileDetails
 from bson import ObjectId
 from pymongo import UpdateOne
 from pymongo.errors import PyMongoError
 from google.genai import types
 import mimetypes, requests, json, aiohttp, asyncio, magic, os, base64
-
+from datetime import datetime, timedelta
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_API")
@@ -395,3 +395,62 @@ async def verify_image_path(file_path: str) -> bool:
         return response.status_code == 200
     except:
         return False
+
+async def upgrade_plan(user_id: str, plan_type: PlanType):
+    """
+    Upgrade user membership plan.
+    Expects JSON body with 'user_id', 'plan_type', 'duration_days'.
+    """
+    try:
+        user_doc = await users_collection.find_one({"user_id": str(user_id)})
+        if not user_doc:
+            return {"ok": False, "message": "User not found"}
+
+        current_membership = user_doc.get("membership", {})
+        
+        # Get current start date and ensure it's a datetime object
+        current_start_date = current_membership.get("current_start_date")
+        if isinstance(current_start_date, str):
+            current_start_date = datetime.fromisoformat(current_start_date.replace('Z', '+00:00'))
+        elif current_start_date is None:
+            current_start_date = datetime.now()
+        
+        # Get current end date (expires_at) and ensure it's a datetime object
+        current_end_date = current_membership.get("expires_at")
+        if isinstance(current_end_date, str):
+            current_end_date = datetime.fromisoformat(current_end_date.replace('Z', '+00:00'))
+        
+        # Calculate new end date
+        end_date = None
+        if plan_type == PlanType.quarterly:
+            end_date = datetime.now() + timedelta(days=90)
+        elif plan_type == PlanType.yearly:
+            end_date = datetime.now() + timedelta(days=365)
+        
+        # Only create previous_plan if there was an existing plan
+        history = current_membership.get("history", [])
+        if current_membership.get("plan"):  # Only add to history if there was a previous plan
+            previous_plan = PreviousPlan(
+                plan=current_membership.get("plan"),
+                start_date=current_start_date,
+                end_date=current_end_date  # Use the actual expiry date, not calculated
+            )
+            history = history + [previous_plan.model_dump()]
+        
+        updated_membership = Membership(
+            plan=plan_type,
+            expires_at=end_date,
+            current_start_date=datetime.now(),
+            history=history
+        )
+
+        updated_user = await users_collection.update_one(
+            {"user_id": str(user_id)},
+            {"$set": {"membership": updated_membership.model_dump()}}
+        )
+        
+        print(updated_user.matched_count, updated_user.modified_count)
+        return {"ok": True, "message": "Membership upgraded successfully"}
+
+    except Exception as e:
+        return {"ok": False, "message": f"Error: {str(e)}"}
