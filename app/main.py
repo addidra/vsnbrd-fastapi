@@ -170,18 +170,13 @@ from bson import ObjectId
 async def get_post_from_board(board_id: str = Body(..., embed=True)):
     try:
         board = await boards_collection.find_one({"_id": ObjectId(board_id)}, {"posts": 1, "user_id": 1, "_id": 0, "name": 1})
-        user_doc = await users_collection.find_one({"user_id": board["user_id"]}, {"membership": 1, "_id": 0})
-        if user_doc["membership"].get("expires_at") and user_doc["membership"].get("expires_at") > datetime.now():
-            post_ids = board.get("posts", [])
-            user_posts = await posts_collection.find({"_id": {"$in": post_ids}}).to_list(length=None)
+        post_ids = board.get("posts", [])
+        user_posts = await posts_collection.find({"_id": {"$in": post_ids}}).to_list(length=None)
 
-            if not user_posts:
-                return {"ok":False, "message": "No posts found for this user."}
+        if not user_posts:
+            return {"ok":False, "message": "No posts found for this user."}
 
-            return {"posts":[serialize_doc(post) for post in user_posts], "board": board["name"]}
-        else:
-            return {"ok":True, "isFree": True, "message": "Board access expired. Please renew your membership to access boards."}
-
+        return {"posts":[serialize_doc(post) for post in user_posts], "board": board["name"]}
     except Exception as e:
         return {"ok": False, "message": str(e)}
 
