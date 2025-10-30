@@ -60,12 +60,16 @@ async def test():
 
 @app.api_route("/getImage", methods=["GET", "HEAD"])
 async def getImage(file_path: str = Query(...)):
+    """
+    Returns image content for the given file_path.
+    if not found refethes from telegram and updates DB accordingly and send the updated file path in response header 'X-new-file-path'.
+    """
     try:
         # Try to get image from current path
         response = await get_image(file_path=file_path)
         
         if response["ok"]:
-            return Response(content=response["content"], media_type=response["media_type"])
+            return Response(content=response["content"], media_type=response["media_type"], headers={"X-file-path": file_path})
         
         # If image not found, fetch from DB and update
         pipeline = [
