@@ -36,6 +36,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers including Authorization
+    expose_headers=["X-File-Path", "X-New-File-Path"] 
 )
 
 # Add authentication middleware AFTER CORS
@@ -69,7 +70,7 @@ async def getImage(file_path: str = Query(...)):
         response = await get_image(file_path=file_path)
         
         if response["ok"]:
-            return Response(content=response["content"], media_type=response["media_type"], headers={"X-file-path": file_path})
+            return Response(content=response["content"], media_type=response["media_type"], headers={"X-File-Path": file_path})
         
         # If image not found, fetch from DB and update
         pipeline = [
@@ -146,7 +147,7 @@ async def getImage(file_path: str = Query(...)):
                 {"_id": post["_id"]},
                 {"$set": {f"file_details.{post.get('resolution')}.file_path": new_file_path}}
             )
-            return Response(content=response["content"], media_type=response["media_type"], headers={"X-new-file-path": new_file_path})
+            return Response(content=response["content"], media_type=response["media_type"], headers={"X-New-File-Path": new_file_path})
 
         raise HTTPException(status_code=404, detail="Image not found even after path refresh")
 
