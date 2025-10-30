@@ -208,13 +208,8 @@ async def generate_tags(mime_type: str, data: bytes, user_id: str):
 
     """
     
-    tags = await tags_collection.find(
-        {"user_id": user_id},
-        {"name": 1, "_id": 0}
-    ).to_list(length=None)
-    
+    tag_names = await tags_collection.distinct("name", {"user_id": user_id})
 
-    tag_names = [tag["name"] for tag in tags]
     text = """
         Analyze the provided image or video and return only a JSON array containing up to 7 unique, high-relevance tags that best describe it for casual user search.
         Tags must be unrelated to each other, with each representing a distinct and clearly recognizable concept such as visible text, dominant colors, distinct shapes, or obvious objects.
@@ -265,27 +260,32 @@ async def generate_tags(mime_type: str, data: bytes, user_id: str):
 
 async def save_tags_and_update_post(tags_list: list[str], user_id: str, post_id: ObjectId):
     """Save tags to tags_collection with user_id and update the post's tag_names."""
-
+    tags_list = list(set(tags_list))
+    
+    existing_tags = set(tags_collection.find({"name": {"$in": tags_list}, user_id:user_id}, {"name": 1, "_id": 0, "user_id":1}))
+    
+    new_tags = [{"name": name, "user_id": user_id} for name in tags_list if name not in (tag['name'] for tag in existing_tags)]
+    
     # Prepare bulk upsert operations for tags
-    operations = [
-        UpdateOne(
-            {"name": tag},  # match tag by name
-            {
-                "$setOnInsert": {"name": tag},  # only set name if inserting
-                "$addToSet": {"user_id": user_id},  # ensures no duplicate user_id
-            },
-            upsert=True
-        )
-        for tag in tags_list
-    ]
+    # operations = [
+    #     UpdateOne(
+    #         {"name": tag},  # match tag by name
+    #         {
+    #             "$setOnInsert": {"name": tag},  # only set name if inserting
+    #             "$addToSet": {"user_id": user_id},  # ensures no duplicate user_id
+    #         },
+    #         upsert=True
+    #     )
+    #     for tag in tags_list
+    # ]
 
 
-    if not operations:
-        return
+    # if not operations:
+    #     return
 
     # Run both updates concurrently
     await asyncio.gather(
-        tags_collection.bulk_write(operations),
+        tags_collection.insert_many(new_tags) if new_tags else None,
         posts_collection.update_one(
             {"_id": post_id},
             {"$addToSet": {"tag_names": {"$each": tags_list}}}
@@ -371,12 +371,12 @@ async def remove_tag_from_post(name: str, file_path: str, user_id: str):
             {"$pull": {"tag_names": name}},
             session=session
         )
-        await tags_collection.update_one(
-            {"_id": tag_doc["_id"]},
-            {"$pull": {"user_id": user_id}},
-            session=session
-        )
-
+        # Check is any other posts have this tag for the same user
+        other_post_with_tag = await posts_collection.find_one({"tag_names":name, "user_id":user_id}, session=session)
+        if not other_post_with_tag:
+            # If no other posts have this tag, remove it from tags_collection
+            await tags_collection.delete_one({"_id": tag_doc["_id"]}, session=session)
+            
         await session.commit_transaction()
         return {"ok": True, "message": "Tag removed from post"}
 

@@ -30,7 +30,7 @@ class PreviousPlan(MongoBaseModel):
     end_date: datetime
 
 class Membership(MongoBaseModel):
-    plan: PlanType = Field(default_factory=PlanType.free)
+    plan: PlanType = Field(default=PlanType.free)
     expires_at: datetime | None = None
     current_start_date: datetime | None = None
     history: list[PreviousPlan] = Field(default_factory=list)

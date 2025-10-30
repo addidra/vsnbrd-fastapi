@@ -58,4 +58,4 @@ class Post(MongoBaseModel):
 
 class Tags(MongoBaseModel):
     name: str
-    user_id: List[PyObjectId] = []
+    user_id: str

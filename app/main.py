@@ -142,7 +142,7 @@ async def getImage(file_path: str = Query(...)):
                 {"_id": post["_id"]},
                 {"$set": {f"file_details.{post.get('resolution')}.file_path": new_file_path}}
             )
-            return Response(content=response["content"], media_type=response["media_type"])
+            return Response(content=response["content"], media_type=response["media_type"], headers={"X-new-file-path": new_file_path})
 
         raise HTTPException(status_code=404, detail="Image not found even after path refresh")
 
@@ -184,22 +184,44 @@ async def get_post_from_board(board_id: str = Body(..., embed=True)):
 async def search_posts(query: str = Query(...), user_id: str = Query(...)):
     try:
         # First try Atlas Search autocomplete
-        tag_cursor = await tags_collection.aggregate([
+        # TODO: Use index to search for tags efficinetly 
+        tags = await tags_collection.aggregate([
             {
                 "$search": {
-                    "index": "search",  # the index you created in Atlas
-                    "autocomplete": {
-                        "query": query,
-                        "path": "name",
-                        "fuzzy": { "maxEdits": 1 }  # typo-tolerance
+                    "index": "tag_search",  # Different index for user_tags collection
+                    "compound": {
+                        "must": [
+                            {
+                                "autocomplete": {
+                                    "query": query,
+                                    "path": "name",
+                                    "fuzzy": {"maxEdits": 3}
+                                }
+                            }
+                        ],
+                        "filter": [
+                            {
+                                "equals": {
+                                    "path": "user_id",
+                                    "value": user_id
+                                }
+                            }
+                        ]
                     }
                 }
             },
-            {"$match": {"user_id": user_id}},
-            {"$limit": 10}
-        ])
+            {
+                "$limit": 10
+            },
+            {
+                "$project": {
+                    "name": 1,
+                    "score": {"$meta": "searchScore"},
+                    "_id": 0
+                }
+            }
+        ]).to_list(length=None)
 
-        tags = await tag_cursor.to_list(length=None)
 
         # Fallback to regex if Atlas Search returned nothing
         if not tags:
