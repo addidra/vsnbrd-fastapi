@@ -58,7 +58,7 @@ async def test():
     except Exception as e:
         return HTTPException(status_code=500, detail=str(e))
 
-@app.get('/getImage')
+@app.api_route("/getImage", methods=["GET", "HEAD"])
 async def getImage(file_path: str = Query(...)):
     try:
         # Try to get image from current path
