@@ -489,12 +489,13 @@ async def upgrade_plan(user_id: str, plan_type: PlanType):
     
 async def is_premium_user(user_id:str) -> bool:
     """Check if the user has an active premium membership."""
-    user_doc :User= await users_collection.find_one({"user_id": str(user_id)})
+    user_doc = await users_collection.find_one({"user_id": str(user_id)})
     if not user_doc:
         return False
-    membership = user_doc.membership
-    plan = membership.plan
-    expires_at = membership.expires_at
+    membership = user_doc.get("membership")
+    if not membership:
+        return False
+    expires_at = membership.get("expires_at")
 
     if not expires_at:
         return False
