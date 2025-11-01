@@ -504,3 +504,125 @@ async def is_premium_user(user_id:str) -> bool:
         expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
 
     return datetime.now() < expires_at
+
+async def search_tags_standard(query: str, user_id: str, limit: int = 10) -> List[dict]:
+    """
+    Standard text search with autocomplete and typo tolerance.
+    Uses Atlas Search with fallback to regex.
+    """
+    try:
+        # Try Atlas Search first
+        pipeline = [
+            {
+                "$search": {
+                    "index": "tag_search",
+                    "compound": {
+                        "must": [
+                            {
+                                "autocomplete": {
+                                    "query": query,
+                                    "path": "name",
+                                    "fuzzy": {
+                                        "maxEdits": 2,  # Allow up to 2 typos
+                                        "prefixLength": 1  # First character must match
+                                    }
+                                }
+                            }
+                        ],
+                        "filter": [
+                            {
+                                "equals": {
+                                    "path": "user_id",
+                                    "value": user_id
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {"$limit": limit},
+            {
+                "$project": {
+                    "name": 1,
+                    "score": {"$meta": "searchScore"},
+                    "_id": 0
+                }
+            }
+        ]
+        
+        cursor = tags_collection.aggregate(pipeline)
+        tags = await cursor.to_list(length=limit)
+        
+        # Fallback to regex if Atlas Search returns nothing
+        if not tags:
+            print(f"Atlas Search returned nothing, using regex fallback for query: {query}")
+            tags = await tags_collection.find(
+                {
+                    "name": {"$regex": query, "$options": "i"},
+                    "user_id": user_id
+                },
+                {"name": 1, "_id": 0}
+            ).limit(limit).to_list(length=limit)
+        
+        return tags
+    
+    except Exception as e:
+        print(f"Standard search error: {e}, falling back to regex")
+        # Final fallback to regex
+        try:
+            tags = await tags_collection.find(
+                {
+                    "name": {"$regex": query, "$options": "i"},
+                    "user_id": user_id
+                },
+                {"name": 1, "_id": 0}
+            ).limit(limit).to_list(length=limit)
+            return tags
+        except Exception as fallback_error:
+            print(f"Regex fallback also failed: {fallback_error}")
+            return []
+
+
+# ==================== SEMANTIC SEARCH (PREMIUM) ====================
+
+async def search_tags_semantic(query: str, user_id: str, limit: int = 10) -> List[dict]:
+    """
+    Semantic search using AI embeddings.
+    Finds tags with similar meaning, not just keyword matches.
+    """
+    try:
+        # Generate embedding for the search query
+        query_embeddings = await generate_embeddings_async([query])
+        query_embedding = query_embeddings[0].tolist()
+        
+        # Vector search pipeline
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "vector_index",  # Atlas Vector Search index
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": 100,  # Number of candidates to consider
+                    "limit": limit,
+                    "filter": {"user_id": {"$eq": user_id}}
+                }
+            },
+            {
+                "$project": {
+                    "name": 1,
+                    "score": {"$meta": "vectorSearchScore"},
+                    "_id": 0
+                }
+            }
+        ]
+        
+        cursor = tags_collection.aggregate(pipeline)
+        tags = await cursor.to_list(length=limit)
+        
+        return tags
+    
+    except Exception as e:
+        print(f"Semantic search error: {e}")
+        # Fallback to standard search if semantic fails
+        print("Falling back to standard search...")
+        return await search_tags_standard(query, user_id, limit)

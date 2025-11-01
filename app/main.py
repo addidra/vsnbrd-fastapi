@@ -8,7 +8,7 @@ from app.actions.middleware import UserValidationMiddleware
 from app.actions.security import validate_init_data
 from app.actions.telegram import TelegramFilePathFetcher
 from app.dependency import invoices_collection, users_collection, posts_collection, tags_collection, boards_collection
-from app.actions.telegram_bot import upgrade_plan, run_tele_api, verify_image_path, remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
+from app.actions.telegram_bot import is_premium_user, search_tags_standard, search_tags_semantic, upgrade_plan, run_tele_api, verify_image_path, remove_tag_from_post, serialize_doc, send_msg, handle_new_user, get_file_path, extract_photo_details, save_post, generate_tags, save_tags_and_update_post, fetch_mime_type, get_image, fetch_post_from_file_path
 from urllib.parse import unquote, parse_qsl
 from app.schemas.users import PaymentRecord, PlanType, PreviousPlan, Membership, InvoiceRequest
 import json
@@ -184,65 +184,47 @@ async def get_post_from_board(board_id: str = Body(..., embed=True)):
         return {"posts":[serialize_doc(post) for post in user_posts], "board": board["name"]}
     except Exception as e:
         return {"ok": False, "message": str(e)}
+    
 
 @app.get("/search")
-async def search_posts(query: str = Query(...), user_id: str = Query(...)):
+async def search_posts(
+    query: str = Query(..., min_length=1, description="Search query"),
+    user_id: str = Query(..., description="User ID")
+):
+    """
+    Search posts by tags.
+    
+    - **standard**: Text-based autocomplete with typo tolerance (FREE)
+    - **semantic**: AI-powered meaning-based search (PREMIUM)
+    
+    Examples:
+    - Standard: query="tira" finds "tiramisu"
+    - Semantic: query="italian dessert" finds "tiramisu", "panna cotta", "gelato"
+    """
     try:
-        # First try Atlas Search autocomplete
-        # TODO: Use index to search for tags efficinetly 
-        tags = await tags_collection.aggregate([
-            {
-                "$search": {
-                    "index": "tag_search",  # Different index for user_tags collection
-                    "compound": {
-                        "must": [
-                            {
-                                "autocomplete": {
-                                    "query": query,
-                                    "path": "name",
-                                    "fuzzy": {"maxEdits": 3}
-                                }
-                            }
-                        ],
-                        "filter": [
-                            {
-                                "equals": {
-                                    "path": "user_id",
-                                    "value": user_id
-                                }
-                            }
-                        ]
-                    }
-                }
-            },
-            {
-                "$limit": 10
-            },
-            {
-                "$project": {
-                    "name": 1,
-                    "score": {"$meta": "searchScore"},
-                    "_id": 0
-                }
-            }
-        ]).to_list(length=None)
-
-
-        # Fallback to regex if Atlas Search returned nothing
+        # Route to appropriate search method
+        user_premium = await is_premium_user(user_id)
+        if user_premium:
+            tags = await search_tags_semantic(query, user_id)
+        else:
+            tags = await search_tags_standard(query, user_id)
+        
         if not tags:
-            tags = await tags_collection.find(
-                {
-                    "name": {"$regex": query, "$options": "i"},
-                    "user_id": user_id
-                }
-            ).to_list(length=None)
-            print(f"Regex fallback")
-
+            return {
+                "ok": False,
+                "message": "No posts found matching the query.",
+                "query": query,
+            }
+        
         tag_names = [t["name"] for t in tags]
-        print(f"Found tags: {tag_names}")
-
+        print(f"Premium User?: {user_premium}, Query: {query}, Found tags: {tag_names}")
+        
+        # Find posts with matching tags
         search_results = await posts_collection.find(
-            {"tag_names": {"$in": tag_names}, "user_id": user_id},
+            {
+                "tag_names": {"$in": tag_names},
+                "user_id": user_id
+            },
             {
                 "file_details": 1,
                 "caption": 1,
@@ -251,14 +233,28 @@ async def search_posts(query: str = Query(...), user_id: str = Query(...)):
                 "_id": 0
             }
         ).to_list(length=None)
-
+        
         if not search_results:
-            return {"ok": False, "message": "No posts found matching the query."}
-
-        return search_results
-
+            return {
+                "ok": False,
+                "message": "No posts found matching the query.",
+                "query": query,
+                "tags_found": tag_names,
+            }
+        
+        return {
+            "ok": True,
+            "query": query,
+            "tags_found": tag_names,
+            "posts": search_results,
+            "count": len(search_results)
+        }
+    
     except Exception as e:
+        print(f"Search error: {e}")
         return {"ok": False, "message": str(e)}
+
+
 
 
 @app.get('/getFilePaths')
