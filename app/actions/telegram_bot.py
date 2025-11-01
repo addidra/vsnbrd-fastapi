@@ -260,38 +260,46 @@ async def generate_tags(mime_type: str, data: bytes, user_id: str):
 
 async def save_tags_and_update_post(tags_list: list[str], user_id: str, post_id: ObjectId):
     """Save tags to tags_collection with user_id and update the post's tag_names."""
-    tags_list = list(set(tags_list))
+    tags_list = list(set(tags_list))  # Remove duplicates from input
     
-    existing_tags = set(tags_collection.find({"name": {"$in": tags_list}, user_id:user_id}, {"name": 1, "_id": 0, "user_id":1}))
+    if not tags_list:
+        return False
     
-    new_tags = [{"name": name, "user_id": user_id} for name in tags_list if name not in (tag['name'] for tag in existing_tags)]
-    
-    # Prepare bulk upsert operations for tags
-    # operations = [
-    #     UpdateOne(
-    #         {"name": tag},  # match tag by name
-    #         {
-    #             "$setOnInsert": {"name": tag},  # only set name if inserting
-    #             "$addToSet": {"user_id": user_id},  # ensures no duplicate user_id
-    #         },
-    #         upsert=True
-    #     )
-    #     for tag in tags_list
-    # ]
-
-
-    # if not operations:
-    #     return
-
-    # Run both updates concurrently
-    await asyncio.gather(
-        tags_collection.insert_many(new_tags) if new_tags else None,
-        posts_collection.update_one(
-            {"_id": post_id},
-            {"$addToSet": {"tag_names": {"$each": tags_list}}}
-        )
+    # Fetch existing tags for this user
+    existing_tags_cursor = tags_collection.find(
+        {"name": {"$in": tags_list}, "user_id": user_id},
+        {"name": 1, "_id": 0}
     )
+    existing_tags = await existing_tags_cursor.to_list(length=None)
+    existing_tag_names = {tag['name'] for tag in existing_tags}
+    
+    # Filter out tags that already exist
+    new_tags = [
+        {"name": name, "user_id": user_id} 
+        for name in tags_list 
+        if name not in existing_tag_names
+    ]
+    
+    print(f"Existing tags: {existing_tag_names}")
+    print(f"New tags to insert: {[t['name'] for t in new_tags]}")
+    
+    # Prepare operations
+    insert_task = tags_collection.insert_many(new_tags) if new_tags else None
+    update_task = posts_collection.update_one(
+        {"_id": post_id},
+        {"$addToSet": {"tag_names": {"$each": tags_list}}}
+    )
+    
+    # Run both operations concurrently
+    if insert_task:
+        await asyncio.gather(insert_task, update_task)
+    else:
+        await update_task
+    
     return True
+
+# def run():
+#     return save_tags_and_update_post(tags_list=["cake", "dessert", "sweet"], user_id="1892630283", post_id=ObjectId("656f1f4e8f1b2c3d4e5f6789"))
 
 
 def fetch_mime_type(b64_data, file_path) -> str:
