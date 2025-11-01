@@ -163,7 +163,8 @@ async def get_user_posts(user_id: str = Query(...)):
         
         if not user_posts:
             return {"ok":False, "message": "No posts found for this user."}
-        return {"posts": [serialize_doc(post) for post in user_posts]}
+        
+        return [serialize_doc(post) for post in user_posts]
     
     except Exception as e:
         return {"ok": False, "message": str(e)}
@@ -241,14 +242,7 @@ async def search_posts(
                 "tags_found": tag_names,
             }
         
-        return {
-            "ok": True,
-            "query": query,
-            "tags_found": tag_names,
-            "posts": search_results,
-            "count": len(search_results)
-        }
-    
+        return search_results
     except Exception as e:
         print(f"Search error: {e}")
         return {"ok": False, "message": str(e)}
