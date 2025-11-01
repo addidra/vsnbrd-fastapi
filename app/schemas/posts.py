@@ -59,3 +59,5 @@ class Post(MongoBaseModel):
 class Tags(MongoBaseModel):
     name: str
     user_id: str
+    embedding: Optional[List[float]] = None
+    created_at: datetime = Field(default_factory=datetime.now)

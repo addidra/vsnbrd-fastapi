@@ -257,46 +257,70 @@ async def generate_tags(mime_type: str, data: bytes, user_id: str):
     # tags_list = json.loads(text_value)
     return res_dict
 
+from fastembed import TextEmbedding
+from concurrent.futures import ThreadPoolExecutor
+from pymongo import UpdateOne
+from typing import List
+from datetime import datetime
+import asyncio
+
+# Initialize once (global)
+embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+executor = ThreadPoolExecutor(max_workers=4)
+
+async def generate_embeddings_async(texts: List[str]) -> List[List[float]]:
+    """Generate embeddings asynchronously using FastEmbed"""
+    loop = asyncio.get_event_loop()
+    
+    # Run in thread pool to avoid blocking event loop
+    embeddings = await loop.run_in_executor(
+        executor,
+        lambda: list(embedding_model.embed(texts))
+    )
+    
+    return embeddings
 
 async def save_tags_and_update_post(tags_list: list[str], user_id: str, post_id: ObjectId):
-    """Save tags to tags_collection with user_id and update the post's tag_names."""
-    tags_list = list(set(tags_list))  # Remove duplicates from input
+    """Save tags with embeddings using upsert to avoid race conditions."""
+    tags_list = list(set(tags_list))  # Remove duplicates
     
     if not tags_list:
         return False
     
-    # Fetch existing tags for this user
-    existing_tags_cursor = tags_collection.find(
-        {"name": {"$in": tags_list}, "user_id": user_id},
-        {"name": 1, "_id": 0}
-    )
-    existing_tags = await existing_tags_cursor.to_list(length=None)
-    existing_tag_names = {tag['name'] for tag in existing_tags}
+    # Generate embeddings for all tags (batch is more efficient)
+    embeddings = await generate_embeddings_async(tags_list)
     
-    # Filter out tags that already exist
-    new_tags = [
-        {"name": name, "user_id": user_id} 
-        for name in tags_list 
-        if name not in existing_tag_names
-    ]
-    
-    print(f"Existing tags: {existing_tag_names}")
-    print(f"New tags to insert: {[t['name'] for t in new_tags]}")
-    
-    # Prepare operations
-    insert_task = tags_collection.insert_many(new_tags) if new_tags else None
-    update_task = posts_collection.update_one(
-        {"_id": post_id},
-        {"$addToSet": {"tag_names": {"$each": tags_list}}}
-    )
+    # Create upsert operations
+    operations = []
+    for tag_name, embedding in zip(tags_list, embeddings):
+        operations.append(
+            UpdateOne(
+                {"name": tag_name, "user_id": user_id},  # Match criteria
+                {
+                    "$setOnInsert": {  # Only set these fields if inserting
+                        "name": tag_name,
+                        "user_id": user_id,
+                        "embedding": embedding.tolist(),  # Convert to list for MongoDB
+                        "created_at": datetime.now()
+                    }
+                },
+                upsert=True  # Insert if doesn't exist
+            )
+        )
     
     # Run both operations concurrently
-    if insert_task:
-        await asyncio.gather(insert_task, update_task)
-    else:
-        await update_task
-    
-    return True
+    try:
+        await asyncio.gather(
+            tags_collection.bulk_write(operations, ordered=False),
+            posts_collection.update_one(
+                {"_id": post_id},
+                {"$addToSet": {"tag_names": {"$each": tags_list}}}
+            )
+        )
+        return True
+    except Exception as e:
+        print(f"Error saving tags: {e}")
+        return False
 
 # def run():
 #     return save_tags_and_update_post(tags_list=["cake", "dessert", "sweet"], user_id="1892630283", post_id=ObjectId("656f1f4e8f1b2c3d4e5f6789"))
@@ -462,3 +486,21 @@ async def upgrade_plan(user_id: str, plan_type: PlanType):
 
     except Exception as e:
         return {"ok": False, "message": f"Error: {str(e)}"}
+    
+async def is_premium_user(user_id:str) -> bool:
+    """Check if the user has an active premium membership."""
+    user_doc :User= await users_collection.find_one({"user_id": str(user_id)})
+    if not user_doc:
+        return False
+    membership = user_doc.membership
+    plan = membership.plan
+    expires_at = membership.expires_at
+
+    if not expires_at:
+        return False
+
+    # Ensure expires_at is a datetime object
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+
+    return datetime.now() < expires_at
