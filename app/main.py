@@ -163,8 +163,7 @@ async def get_user_posts(user_id: str = Query(...)):
         
         if not user_posts:
             return {"ok":False, "message": "No posts found for this user."}
-        
-        return [serialize_doc(post) for post in user_posts]
+        return {"posts": [serialize_doc(post) for post in user_posts]}
     
     except Exception as e:
         return {"ok": False, "message": str(e)}
